@@ -9,8 +9,19 @@
 ```bash
 git clone https://github.com/2472099715liangren-ship-it/nightfood-ai.git
 cd nightfood-ai
-python3 app.py
+sh start.sh
 ```
+
+macOS / Linux 使用 `sh start.sh` 即可同时启动网页和后端接口。脚本会检查 Python 版本、SQLite 支持及端口参数，并自动切换到项目目录，也可以从其他目录通过完整路径运行。无需安装第三方依赖。
+
+自定义端口或数据库文件：
+
+```bash
+PORT=8080 sh start.sh
+APP_DB=/absolute/path/night.db sh start.sh
+```
+
+脚本以当前用户权限运行，在前台保持服务，退出终端会停止服务。也可直接运行 `python3 app.py`。
 
 Windows 用户也可以下载 GitHub 仓库 ZIP、完整解压后双击 `启动网页.bat`；需要先安装 Python，并勾选 Add Python to PATH。
 
