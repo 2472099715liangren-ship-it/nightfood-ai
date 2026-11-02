@@ -141,8 +141,8 @@ class NightFindHandler(BaseHTTPRequestHandler):
                     return
 
                 if path == "/api/real-restaurants":
-                    max_price = query.get("max_price", [""])[0]
-                    if max_price:
+                    max_price = query.get("max_price", [""])[0] or None
+                    if max_price is not None:
                         try:
                             max_price = int(max_price)
                         except ValueError as error:
@@ -156,13 +156,6 @@ class NightFindHandler(BaseHTTPRequestHandler):
                         cuisine=query.get("cuisine", [""])[0],
                         max_price=max_price,
                     )
-                    if os.environ.get("NIGHTFIND_DEBUG_CATALOG"):
-                        print(
-                            "[NightFind] real catalog debug db={} query={} total={}".format(
-                                connect.__globals__.get("DB_PATH"), query, len(items)
-                            ),
-                            flush=True,
-                        )
                     self._send_json({"items": items, "total": len(items)})
                     return
 
