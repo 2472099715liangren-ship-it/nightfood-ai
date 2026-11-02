@@ -129,3 +129,62 @@ PORT=8001 sh start.sh
 - 换一批只在符合现有约束的商户中轮换，若没有新的会明确提示，不会虚构商户。
 - 对比排序是使用演示价格、等待和评分的可解释规则，并非实时 AI 评测；到店前仍需核实。
 - 收藏仅按浏览器本地访客 ID 区分，不是账号认证，清理浏览器存储会丢失访客 ID。
+
+## 武汉真实商户数据库（开发中）
+
+本模块面向武汉全市 13 个行政区建立独立真实商户表 real_merchants。它与现有
+restaurants 演示商家表分开存储、分开查询。**本次只搭建可核验的导入与查询机制，
+尚未导入任何获得授权的真实商家记录，不会虚构商家或对外宣称已覆盖武汉全市。**
+
+### 数据字段与审核流程
+
+核心字段包括：来源系统中的 external_id（唯一键）、店名、行政区、地址、菜系、
+经纬度、电话、人均价格、营业时间、来源名称和来源 HTTPS 链接、最后核验日期、
+核验方式和审核状态。全部价格/营业信息都是可为空字段，避免制造错误的“实时”印象。
+
+- draft：草稿；pending：待核验；rejected：未通过核验。
+- verified：核验通过，满足来源、日期和核验方式要求后，才会出现在公开接口。
+- 同一 external_id 导入时安全更新，不会删除或覆盖原来的演示数据。
+- 导入来源必须经过许可或商家授权，不应爬取违反网站条款或涉及个人隐私的内容。
+- 未来生产运营建议增加管理员审核权限、定期复核与失效下线机制。
+
+### CSV 批量导入（在服务器/电脑终端执行，不开放前台导入接口）
+
+先准备一个 UTF-8 CSV 文件。例如以下字段为模板，**示例为占位资料，不是真实商家**：
+
+~~~csv
+external_id,name,district,address,cuisine,source_name,source_url,verified_at,verification_method,status,phone,price_per_person,opening_hours,latitude,longitude
+partner-id-001,示例占位商家,江汉区,请替换为核验地址,湖北菜,已授权资料提供方,https://example.org/record/1,2026-10-01,商家书面确认,pending,,,
+~~~
+
+请在获得可使用的数据及核验凭证后再填充；仅将真实核验通过的数据设为 verified。
+
+~~~bash
+python3 import_merchants.py /path/to/authorized-wuhan-merchants.csv --dry-run
+python3 import_merchants.py /path/to/authorized-wuhan-merchants.csv
+~~~
+
+也支持 JSON 数组。文件超过 5MB 会被拒绝；单批次先整体校验再写入。
+数据默认进入 data/night.db，因此原来的收藏及意见数据仍然保留。正式迁移前建议备份数据库。
+
+### 公开读取接口
+
+- GET /api/real-merchants?district=江汉区&keyword=餐厅&limit=30&offset=0
+- GET /api/real-merchants/coverage
+
+只返回核验通过的记录。覆盖统计包含全部 13 个行政区，
+数字代表已经收录并核验的记录数，**不代表武汉全市的实际餐厅数量**。
+前端商家页面新增独立的真实资料区域，演示店铺依然明确标注，不混用推荐分数或评价。
+当前对话推荐仍使用演示数据，正式上线前必须完成真实商户推荐数据源切换与核验。
+
+### 运行测试
+
+~~~bash
+python3 -m unittest discover -s tests -v
+~~~
+
+### 审核与合并
+
+此阶段独立分支 feature/wuhan-real-merchant-database 从
+feature/conversation-compare-tonight-list 创建；
+应待前置改版与功能分支审核合并后，调整本 PR 的目标分支到 main，再考虑合并。
