@@ -38,7 +38,7 @@ OPENAI_MODEL=gpt-5.5
 PORT=8000
 ~~~
 
-再次运行 sh start.sh。配置密钥后，对话会调用 OpenAI Responses API；没有配置密钥时，仍可使用本地规则推荐模式。密钥只从服务器环境读取，不会发送到浏览器，也不应提交到 GitHub。不要把 API 密钥发到聊天窗口或写进前端文件。
+再次运行 sh start.sh。配置密钥后，对话会调用 OpenAI Responses API；没有配置密钥时，仍可使用本地规则推荐模式。密钥只从服务器环境读取，不会发送到浏览器，也不应提交到 GitHub。不要把 API 密钥发到聊天窗口或写进前端文件。启用 AI 后，用户提交的对话内容及最近几轮对话会发送给所配置的模型服务；请勿在聊天中输入敏感个人信息。
 
 如果使用其他兼容 Responses API 的服务，可设置 OPENAI_BASE_URL，必须使用 HTTPS。
 
