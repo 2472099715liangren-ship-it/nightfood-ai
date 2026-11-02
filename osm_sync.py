@@ -9,6 +9,7 @@ verified businesses. It must be distributed with OpenStreetMap attribution.
 import argparse
 import hashlib
 import json
+import datetime as dt
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -81,6 +82,17 @@ def convert_osm_element(element):
             "cafe": "咖啡简餐",
             "food_court": "美食广场",
         }.get(tags.get("amenity"), "餐饮")
+    # Only OSM field-survey tags count as source checking evidence.
+    # Element edit timestamps and the date this snapshot was downloaded do not.
+    checked = tags.get("survey:date") or tags.get("check_date") or ""
+    try:
+        if checked and dt.date.fromisoformat(checked) > dt.date.today():
+            checked = ""
+        elif checked:
+            dt.date.fromisoformat(checked)
+    except (TypeError, ValueError):
+        checked = ""
+
     return {
         "external_id": "osm:{}:{}".format(kind, identifier),
         "name": name[:120],
@@ -94,6 +106,7 @@ def convert_osm_element(element):
         "opening_hours": (tags.get("opening_hours") or "")[:200] or None,
         "source_name": "OpenStreetMap",
         "source_url": "https://www.openstreetmap.org/{}/{}".format(kind, identifier),
+        "source_checked_at": checked,
         "verified_at": "",  # OSM community data is NOT business verification.
         "verification_method": "",
         "status": "pending",

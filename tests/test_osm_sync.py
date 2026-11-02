@@ -1,6 +1,7 @@
 """OSM transform, community safety and snapshot replay tests."""
 import json
 import tempfile
+from datetime import date
 import unittest
 from pathlib import Path
 import database
@@ -14,6 +15,7 @@ OSM_SAMPLE = {
         "name": "单元测试餐馆（虚构，仅用于测试）",
         "amenity": "restaurant",
         "addr:district": "江汉区",
+        "survey:date": date.today().isoformat(),
     },
 }
 
@@ -38,6 +40,19 @@ class OsmTests(unittest.TestCase):
         self.assertEqual(
             record["source_url"], "https://www.openstreetmap.org/node/12345"
         )
+
+    def test_osm_edit_without_survey_date_is_not_recent_evidence(self):
+        sample = dict(OSM_SAMPLE)
+        sample["tags"] = {
+            "name": "无核查日期的候选餐厅",
+            "amenity": "restaurant",
+            "addr:district": "江汉区",
+        }
+        record = convert_osm_element(sample)
+        self.assertEqual(record["source_checked_at"], "")
+        with database.connect() as connection:
+            import_real_merchants(connection, [record])
+            self.assertEqual(public_real_merchants(connection)["total"], 0)
 
     def test_missing_district_is_not_guessed(self):
         element = dict(OSM_SAMPLE)
