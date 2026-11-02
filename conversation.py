@@ -22,7 +22,7 @@ def refine_preferences(message, prior_context, preferences, districts):
 
     if any(item["name"] in message for item in districts):
         known.add("district")
-    if re.search(r"(?:人均|预算|每人|每位|不超过|最多|¥|￥)\s*(?:在|为|约)?\s*\d{1,3}", message) or re.search(r"\d{1,3}\s*(?:元|块)", message):
+    if re.search(r"(?:人均|预算|每人|每位|¥|￥)\s*(?:在|为|约)?\s*\d{1,3}", message) or re.search(r"\d{1,3}\s*(?:元|块)", message):
         known.add("budget")
     if re.search(r"(?:等位|排队|等待|不想等|不排队|少等|分钟)", message):
         known.add("wait")
