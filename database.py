@@ -157,6 +157,10 @@ def initialize_database():
         # Keep verified real merchants in separate tables from prototype data.
         from real_catalog import initialize_real_catalog
         initialize_real_catalog(connection)
+        # Load approved OSM snapshot only when its checksum changes.
+        # No network access occurs during normal app startup.
+        from osm_sync import hydrate_osm_snapshot
+        hydrate_osm_snapshot(connection)
 
 
 def _seed_demo_data(connection):
