@@ -1,0 +1,52 @@
+name: Collect Wuhan OSM restaurants once
+
+on:
+  push:
+    branches:
+      - feature/osm-wuhan-public-data
+    paths:
+      - .github/workflows/osm-collect.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/osm-wuhan-public-data
+          persist-credentials: true
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Retrieve public OSM data and create attribution-ready snapshot
+        run: python3 osm_sync.py fetch --output data_sources/osm_wuhan_snapshot.json
+      - name: Validate and load snapshot without deleting old demo data
+        run: |
+          python3 -m unittest discover -s tests -v
+          python3 - <<'PY'
+          import database
+          from real_catalog import catalog_coverage
+          database.initialize_database()
+          with database.connect() as conn:
+              status=catalog_coverage(conn)
+              print("Community mapped restaurants:", status["community_total"])
+              assert status["community_total"] > 0
+          PY
+      - name: Commit checked snapshot to this feature branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data_sources/osm_wuhan_snapshot.json
+          if git diff --cached --quiet; then
+            echo "No new snapshot changes"
+          else
+            git commit -m "data: import Wuhan OSM community restaurants (ODbL)"
+            git push origin HEAD:feature/osm-wuhan-public-data
+          fi
