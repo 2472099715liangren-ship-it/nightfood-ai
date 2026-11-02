@@ -391,7 +391,7 @@
         "</select>" +
         '<button class="button-primary" type="submit">找一找</button>' +
       "</form>" +
-      ''<section class="real-catalog-panel"><div class="real-catalog-title"><div>' +
+      '<section class="real-catalog-panel"><div class="real-catalog-title"><div>' +
         '<span class="eyebrow">REAL WUHAN DIRECTORY</span><h2>武汉真实商家资料</h2>' +
         '<p>只展示核验过、附有来源的真实商家，与下面的示例店铺严格分开。</p>' +
         '</div><span id="real-coverage-count">统计中…</span></div>' +
