@@ -44,6 +44,7 @@ def initialize_real_catalog(connection):
             source_name TEXT NOT NULL,
             source_url TEXT NOT NULL,
             verified_at TEXT,
+            source_checked_at TEXT NOT NULL DEFAULT '',
             verification_method TEXT,
             status TEXT NOT NULL DEFAULT 'draft'
                 CHECK(status IN ('draft','pending','verified','rejected')),
@@ -55,6 +56,11 @@ def initialize_real_catalog(connection):
         CREATE INDEX IF NOT EXISTS idx_real_merchants_name
             ON real_merchants(name);
     """)
+    columns = {item["name"] for item in connection.execute("PRAGMA table_info(real_merchants)")}
+    if "source_checked_at" not in columns:
+        connection.execute(
+            "ALTER TABLE real_merchants ADD COLUMN source_checked_at TEXT NOT NULL DEFAULT ''"
+        )
 
 
 def _clean(value, maximum=200):
@@ -75,6 +81,15 @@ def _validate(record):
     url = item["source_url"]
     if not re.match(r"^https://[^\s/]+\.[^\s/]+", url):
         raise ValueError("来源链接必须为有效 HTTPS URL")
+    checked_at = _clean(record.get("source_checked_at"), 10)
+    if checked_at:
+        try:
+            checked = dt.date.fromisoformat(checked_at)
+        except ValueError as error:
+            raise ValueError("source_checked_at 必须为 YYYY-MM-DD") from error
+        if checked > dt.date.today():
+            raise ValueError("来源核验日期不能晚于今天")
+    item["source_checked_at"] = checked_at
     verified_at = item["verified_at"]
     if verified_at:
         try:
@@ -107,8 +122,14 @@ def _validate(record):
     status = _clean(record.get("status", "pending")) or "pending"
     if status not in VALID_STATUSES:
         raise ValueError("status 不合法")
-    if status == "verified" and (not verified_at or not item["verification_method"]):
-        raise ValueError("发布真实商家前必须填写核验日期和核验方式")
+    if status == "verified":
+        if not verified_at or not item["verification_method"]:
+            raise ValueError("发布真实商家前必须填写核验日期和核验方式")
+        if not checked_at:
+            raise ValueError("已核验门店需要单独的来源核查日期")
+        boundary = _fresh_cutoff()
+        if checked_at < boundary or verified_at < boundary:
+            raise ValueError("餐厅资料或人工核验超过两年，不能公开")
     item["status"] = status
     return item
 
@@ -133,11 +154,11 @@ def import_real_merchants(connection, records, dry_run=False):
             INSERT INTO real_merchants (
                 external_id,name,district,address,cuisine,latitude,longitude,
                 phone,price_per_person,opening_hours,source_name,source_url,
-                verified_at,verification_method,status
+                verified_at,source_checked_at,verification_method,status
             ) VALUES (
                 :external_id,:name,:district,:address,:cuisine,:latitude,:longitude,
                 :phone,:price_per_person,:opening_hours,:source_name,:source_url,
-                :verified_at,:verification_method,:status
+                :verified_at,:source_checked_at,:verification_method,:status
             )
             ON CONFLICT(external_id) DO UPDATE SET
                 name=excluded.name, district=excluded.district,
@@ -146,6 +167,7 @@ def import_real_merchants(connection, records, dry_run=False):
                 phone=excluded.phone, price_per_person=excluded.price_per_person,
                 opening_hours=excluded.opening_hours, source_name=excluded.source_name,
                 source_url=excluded.source_url, verified_at=excluded.verified_at,
+                source_checked_at=excluded.source_checked_at,
                 verification_method=excluded.verification_method,
                 status=excluded.status, updated_at=CURRENT_TIMESTAMP
         """, item)
@@ -171,12 +193,22 @@ def read_import_file(path):
     raise ValueError("仅支持 CSV 或 JSON")
 
 
+def _fresh_cutoff(reference=None):
+    """Two calendar years ago, inclusive; leap-day safe."""
+    current = reference or dt.date.today()
+    try:
+        return current.replace(year=current.year - 2).isoformat()
+    except ValueError:
+        return current.replace(year=current.year - 2, day=28).isoformat()
+
+
 def _public_filter():
-    """Allow unverified OpenStreetMap entries only when visibly identified."""
+    """Only OSM entries with recent survey dates or recently verified businesses."""
     return (
-        "(status='verified' OR "
+        "(source_checked_at >= ? AND ("
+        "(status='verified' AND verified_at >= ?) OR "
         "(status='pending' AND source_name='OpenStreetMap' "
-        "AND external_id LIKE 'osm:%'))"
+        "AND external_id LIKE 'osm:%')))"
     )
 
 
@@ -185,7 +217,7 @@ def public_real_merchants(connection, district="", keyword="", limit=100, offset
     limit = max(1, min(int(limit), 100))
     offset = max(0, int(offset))
     conditions = [_public_filter()]
-    parameters = []
+    parameters = [_fresh_cutoff(), _fresh_cutoff()]
     if district:
         if district not in WUHAN_DISTRICTS:
             return {"items": [], "total": 0}
@@ -202,7 +234,7 @@ def public_real_merchants(connection, district="", keyword="", limit=100, offset
     results = connection.execute(
         "SELECT id,name,district,address,cuisine,latitude,longitude,"
         "phone,price_per_person,opening_hours,source_name,source_url,"
-        "verified_at,verification_method,"
+        "verified_at,source_checked_at,verification_method,"
         "CASE WHEN status='verified' THEN 'verified' ELSE 'community' END AS data_quality "
         "FROM real_merchants WHERE " + where + " ORDER BY updated_at DESC,id DESC "
         "LIMIT ? OFFSET ?", parameters + [limit, offset],
@@ -218,12 +250,19 @@ def public_real_merchants(connection, district="", keyword="", limit=100, offset
 def catalog_coverage(connection):
     """Count independently verified and community-mapped records separately."""
     counts = {row: 0 for row in WUHAN_DISTRICTS}
+    boundary = _fresh_cutoff()
     for item in connection.execute(
         "SELECT district,COUNT(*) AS n FROM real_merchants "
-        "WHERE status='verified' GROUP BY district"
+        "WHERE status='verified' AND verified_at >= ? AND source_checked_at >= ? "
+        "GROUP BY district", (boundary, boundary)
     ):
         counts[item["district"]] = item["n"]
     community = connection.execute(
+        "SELECT COUNT(*) FROM real_merchants WHERE status='pending' "
+        "AND source_name='OpenStreetMap' AND external_id LIKE 'osm:%' "
+        "AND source_checked_at >= ?", (boundary,)
+    ).fetchone()[0]
+    candidate_total = connection.execute(
         "SELECT COUNT(*) FROM real_merchants WHERE status='pending' "
         "AND source_name='OpenStreetMap' AND external_id LIKE 'osm:%'"
     ).fetchone()[0]
@@ -231,6 +270,8 @@ def catalog_coverage(connection):
         "city": "武汉市",
         "verified_total": sum(counts.values()),
         "community_total": community,
+        "candidate_total": candidate_total,
+        "freshness_cutoff": boundary,
         "districts": [{"name": key, "verified_count": value} for key, value in counts.items()],
-        "notice": "社区地图收录与人工核验分开统计；数量不等于武汉全部商家。",
+        "notice": "仅公开最近两年有来源逐店核查日期的资料；没有日期的 OSM 候选暂不展示，不能按快照下载日当作现场核验日期。",
     }
