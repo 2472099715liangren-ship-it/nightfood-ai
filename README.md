@@ -188,3 +188,36 @@ python3 -m unittest discover -s tests -v
 此阶段独立分支 feature/wuhan-real-merchant-database 从
 feature/conversation-compare-tonight-list 创建；
 应待前置改版与功能分支审核合并后，调整本 PR 的目标分支到 main，再考虑合并。
+
+## OpenStreetMap 开放地图商家接入（新增）
+
+本分支接入 **© OpenStreetMap contributors · ODbL** 公开地图资料，查看来源及许可：
+https://www.openstreetmap.org/copyright 。
+来源数据允许按 ODbL 再利用，传播和派生数据库需要保留署名并遵守该许可。
+详见 data_sources/README.md。
+
+- 通过 geofabrik_sync.py 从 Geofabrik 湖北 OpenStreetMap 提取文件裁剪出武汉市范围餐饮场所；
+  如下载服务不可用，可使用 osm_sync.py 进行小范围 Overpass 查询。
+- 只收录有名称且带有 OSM node/way 源 ID 的场所，并保存原始来源链接和地图坐标。
+- 无法确认的行政区明确标记“待确认区县”；地址缺失写“详细地址待核实”，绝不补写猜测地址。
+- OSM 社区地图数据只表示被社区收录，不能代表仍在营业，也不能把地图更新时间当作商家人工核验。
+- 价格、评分、评论和等位时间不会从模拟店铺复制到真实店铺。
+- 网站“商家小册”现在可分别查看社区收录、人工核验和演示商家；AI 对话可列出单独标记的 OSM 候选，但演示推荐评分仍不代表真实商家质量。
+- 若仓库含 data_sources/osm_wuhan_snapshot.json，启动网站时会自动导入 SQLite；每次文件哈希变化才会重新导入一次。既有模拟数据、收藏、评价、用户建议不会被删除。
+- 公共查询端点：GET /api/real-merchants 与 GET /api/real-merchants/coverage；支持分页。
+
+**公开数据采集情况应以仓库中实际存在的快照文件和 GitHub Actions 结果为准。**
+如果快照尚未成功获取，请不要声称已经导入任何真实商家。
+
+在 Mac 预览本分支（新目录，不覆盖旧版）：
+
+~~~bash
+cd ~
+git clone --branch feature/osm-wuhan-public-data --single-branch \
+  https://github.com/2472099715liangren-ship-it/nightfood-ai.git nightfood-ai-osm
+cd ~/nightfood-ai-osm
+PORT=8003 sh start.sh
+~~~
+
+浏览器打开 http://localhost:8003。正式上线前请补上商家真实性抽查、
+更新机制、联系方式核验、合规审核，以及针对真实商家的收藏/对比支持。
