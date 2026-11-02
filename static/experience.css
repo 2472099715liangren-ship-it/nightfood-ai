@@ -402,3 +402,129 @@
 @media (prefers-reduced-motion: reduce) {
   .real-restaurant-card { transition: none; }
 }
+
+
+/* Licensed storefront imagery and true-coordinate map. */
+.real-card-photo,
+.real-card-photo-placeholder {
+  display: block;
+  width: 100%;
+  height: 154px;
+  object-fit: cover;
+  border-radius: 13px;
+  margin-bottom: 12px;
+  background: #e7eee2;
+}
+.real-card-photo-placeholder {
+  display: grid;
+  place-items: center;
+  color: #829480;
+  font-size: 12px;
+}
+.real-photo-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 15px 0;
+}
+.real-photo-figure {
+  margin: 0;
+  min-width: 0;
+  border-radius: 13px;
+  background: #f4f8f1;
+  overflow: hidden;
+}
+.real-photo-figure img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4/3;
+  object-fit: cover;
+}
+.real-photo-figure figcaption {
+  padding: 6px 9px;
+  color: #7b8e79;
+  font-size: 9px;
+}
+.real-no-photo {
+  border-radius: 13px;
+  background: #f3f8ef;
+  color: #83947c;
+  font-size: 11px;
+  padding: 12px 16px;
+}
+.real-view-switch {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.real-map-panel {
+  background: #fafcf7;
+  border: 1px solid #dce9d5;
+  border-radius: 19px;
+  padding: 13px;
+}
+.real-map-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 9px;
+  align-items: center;
+  color: #4a7351;
+  font-size: 12px;
+  padding: 3px 7px 12px;
+}
+.real-map-top span {
+  color: #81967f;
+  font-size: 10px;
+  text-align: right;
+}
+.real-map {
+  width: 100%;
+  min-height: 370px;
+  height: clamp(370px, 52vw, 510px);
+  border-radius: 14px;
+  background: #e9f0e6;
+  overflow: hidden;
+}
+.real-map-panel > p {
+  font-size: 10px;
+  color: #81907b;
+  line-height: 1.7;
+  margin: 9px 5px 0;
+}
+.real-map-popup {
+  max-width: 225px;
+  min-width: 160px;
+  color: #455a49;
+}
+.real-map-popup strong {
+  font-size: 13px;
+}
+.real-map-popup p {
+  margin: 6px 0;
+  font-size: 11px;
+  color: #788e78;
+}
+.real-map-popup > span {
+  font-size: 10px;
+  color: #66816a;
+}
+.real-map-popup button {
+  display: block;
+  background: #e8f1e3;
+  color: #4a7250;
+  border: 1px solid #cfdfc7;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 11px;
+  padding: 6px 11px;
+  margin-top: 9px;
+  cursor: pointer;
+}
+.leaflet-container .leaflet-control-attribution {
+  font-size: 10px;
+}
+@media (max-width: 650px) {
+  .real-map { height: 360px; min-height: 360px; }
+  .real-map-top { align-items: flex-start; flex-direction: column; }
+  .real-photo-gallery { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
