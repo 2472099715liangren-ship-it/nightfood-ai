@@ -163,7 +163,7 @@ def recommend(connection, preferences, session_id):
     origin = districts.get(selected_district, (None, None))
     merchants = list_merchants(
         connection,
-        district="",
+        district=selected_district,
         cuisine=preferences["cuisine"],
         max_price=preferences["budget"],
         limit=200,
