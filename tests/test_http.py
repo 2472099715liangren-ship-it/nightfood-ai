@@ -143,6 +143,13 @@ class HttpApiTests(unittest.TestCase):
             ).fetchone()
             self.assertEqual(stored["record_status"], "verified")
             self.assertEqual(stored["district"], "江岸区")
+            source_status = connection.execute(
+                "SELECT permission_status FROM restaurant_sources WHERE source_code = 'http_merchant'"
+            ).fetchone()["permission_status"]
+            self.assertEqual(source_status, "approved")
+            from restaurant_catalog import list_real_restaurants
+            direct_listing = list_real_restaurants(connection, district="江岸区")
+            self.assertEqual(len(direct_listing), 1)
 
         listing = self.call_api("/api/real-restaurants?district=%E6%B1%9F%E5%B2%B8%E5%8C%BA")
         self.assertEqual(listing["total"], 1)
