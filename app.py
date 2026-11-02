@@ -29,6 +29,12 @@ from database import (
 )
 from services import SCENES, chat
 from comparison import compare_merchants
+from restaurant_catalog import (
+    get_real_restaurant,
+    list_real_restaurants,
+    list_wuhan_areas,
+    public_catalog_summary,
+)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -124,6 +130,42 @@ class NightFindHandler(BaseHTTPRequestHandler):
                             "ai_enabled": bool(os.environ.get("OPENAI_API_KEY", "").strip()),
                         }
                     )
+                    return
+
+                if path == "/api/real-areas":
+                    self._send_json({"items": list_wuhan_areas(connection)})
+                    return
+
+                if path == "/api/real-catalog/summary":
+                    self._send_json(public_catalog_summary(connection))
+                    return
+
+                if path == "/api/real-restaurants":
+                    max_price = query.get("max_price", [""])[0]
+                    if max_price:
+                        try:
+                            max_price = int(max_price)
+                        except ValueError as error:
+                            raise ValueError("人均预算必须是数字") from error
+                        if not 1 <= max_price <= 5000:
+                            raise ValueError("人均预算范围为 1–5000 元")
+                    items = list_real_restaurants(
+                        connection,
+                        keyword=query.get("keyword", [""])[0],
+                        district=query.get("district", [""])[0],
+                        cuisine=query.get("cuisine", [""])[0],
+                        max_price=max_price,
+                    )
+                    self._send_json({"items": items, "total": len(items)})
+                    return
+
+                if path.startswith("/api/real-restaurants/"):
+                    restaurant_id = self._resource_id(path, "/api/real-restaurants/")
+                    restaurant = get_real_restaurant(connection, restaurant_id)
+                    if restaurant is None:
+                        self._send_json({"error": "没有找到已核验的真实餐厅"}, 404)
+                    else:
+                        self._send_json(restaurant)
                     return
 
                 if path == "/api/merchants":
