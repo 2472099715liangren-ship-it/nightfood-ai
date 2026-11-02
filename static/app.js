@@ -115,7 +115,7 @@
         '<p class="merchant-summary">' + escapeHtml(merchant.description || "这家店正在等待一段更完整的介绍。") + "</p>" +
         '<div class="merchant-facts"><span>人均 ¥' + merchant.price + "</span>" +
           "<span>等位约 " + merchant.wait + " 分钟</span>" +
-          (merchant.closes ? "<span>营业至 " + (merchant.closes - 24) + ":00</span>" : "") +
+          (merchant.closes ? "<span>演示营业至次日 " + (merchant.closes - 24) + ":00</span>" : "") +
         "</div>" +
         '<div class="tag-row">' + tags + score + "</div>" +
         '<button class="quiet-link" type="button" data-merchant="' + merchant.id + '">' +
@@ -327,7 +327,8 @@
         '<div class="detail-facts"><span>' + escapeHtml(merchant.district) + "</span>" +
           "<span>" + escapeHtml(merchant.cuisine) + "</span><span>人均 ¥" + merchant.price +
           "</span><span>等位约 " + merchant.wait + " 分钟</span></div>" +
-        '<p class="detail-address">' + escapeHtml(merchant.address_label || "商圈信息待补充") + "</p>" +
+        '<p class="detail-address">' + escapeHtml(merchant.address_label || "商圈信息待补充") +
+          " · 基础评分为演示值</p>" +
         "<h3>菜单小记</h3>" + (dishes || '<p class="detail-description">暂时还没有菜单信息。</p>') +
         "<h3>大家的反馈</h3>" + (reviews || '<p class="detail-description">还没有收到评价。</p>') +
         '<form id="merchant-feedback" class="detail-feedback">' +
