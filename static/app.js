@@ -340,6 +340,38 @@
     }
   }
 
+  async function renderRealCatalog() {
+    const container = document.getElementById("real-catalog-results");
+    if (!container) return;
+    const district = document.getElementById("real-district").value;
+    const keyword = document.getElementById("real-keyword").value.trim();
+    const params = new URLSearchParams({limit: "50"});
+    if (district) params.set("district", district);
+    if (keyword) params.set("keyword", keyword);
+    container.innerHTML = '<p class="feature-description">正在查询已核验商家…</p>';
+    try {
+      const [result, coverage] = await Promise.all([
+        request("/api/real-merchants?" + params.toString()),
+        request("/api/real-merchants/coverage")
+      ]);
+      const count = document.getElementById("real-coverage-count");
+      if (count) count.textContent = "目前已核验 " + coverage.verified_total + " 家 · 覆盖武汉 " +
+        coverage.districts.filter(function (d) { return d.verified_count > 0; }).length + " 个行政区";
+      container.innerHTML = result.items.length ? result.items.map(function (merchant) {
+        return '<article class="real-shop"><div><strong>' + escapeHtml(merchant.name) +
+          '</strong><p>' + escapeHtml(merchant.district) + " · " + escapeHtml(merchant.address) +
+          '</p><small>' + escapeHtml(merchant.cuisine) +
+          (merchant.price_per_person ? " · 人均约 ¥" + merchant.price_per_person : " · 价格待核实") +
+          '</small></div><div class="real-shop-meta"><span>核验于 ' +
+          escapeHtml(merchant.verified_at) + '</span><a href="' +
+          escapeHtml(merchant.source_url) + '" target="_blank" rel="noopener noreferrer">查看来源 ↗</a></div></article>';
+      }).join("") : '<div class="saved-empty"><h2>这个区域还没有已核验的资料</h2>' +
+        '<p>暂时不会用模拟餐厅填充真实商家结果。可以切换商圈或稍后再看。</p></div>';
+    } catch (error) {
+      container.textContent = error.message;
+    }
+  }
+
   async function renderMerchantPage() {
     setActivePage("merchants");
     app.innerHTML =
@@ -359,7 +391,17 @@
         "</select>" +
         '<button class="button-primary" type="submit">找一找</button>' +
       "</form>" +
-      '<div class="directory-toolbar"><span id="merchant-count">正在整理商家…</span>' +
+      ''<section class="real-catalog-panel"><div class="real-catalog-title"><div>' +
+        '<span class="eyebrow">REAL WUHAN DIRECTORY</span><h2>武汉真实商家资料</h2>' +
+        '<p>只展示核验过、附有来源的真实商家，与下面的示例店铺严格分开。</p>' +
+        '</div><span id="real-coverage-count">统计中…</span></div>' +
+        '<form id="real-search" class="real-search"><input id="real-keyword" placeholder="查找真实店名或地址" maxlength="80">' +
+        '<select id="real-district"><option value="">武汉全市</option>' +
+        selectOptions(["江岸区","江汉区","硚口区","汉阳区","武昌区","青山区",
+          "洪山区","东西湖区","蔡甸区","江夏区","黄陂区","新洲区","汉南区"], "") +
+        '</select><button class="button-primary">搜索</button></form>' +
+        '<div id="real-catalog-results"></div></section>' +
+      '<div class="directory-toolbar"><span id="merchant-count">正在整理演示商家…</span>' +
         '<span>资料均为研究演示内容</span></div>' +
       '<div id="merchant-grid" class="merchant-grid"></div>';
 
@@ -367,6 +409,11 @@
       event.preventDefault();
       loadMerchants(new FormData(event.currentTarget));
     });
+    document.getElementById("real-search").addEventListener("submit", function(event) {
+      event.preventDefault();
+      renderRealCatalog();
+    });
+    renderRealCatalog();
     await loadMerchants(new FormData(document.getElementById("merchant-search")));
   }
 
