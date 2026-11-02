@@ -354,15 +354,16 @@
     }
   }
 
-  async function renderRealCatalog() {
+  async function renderRealCatalog(page) {
+    page = Math.max(0, Number(page) || 0);
     const container = document.getElementById("real-catalog-results");
     if (!container) return;
     const district = document.getElementById("real-district").value;
     const keyword = document.getElementById("real-keyword").value.trim();
-    const params = new URLSearchParams({limit: "50"});
+    const params = new URLSearchParams({limit: "50", offset: String(page * 50)});
     if (district) params.set("district", district);
     if (keyword) params.set("keyword", keyword);
-    container.innerHTML = '<p class="feature-description">正在查询已核验商家…</p>';
+    container.innerHTML = '<p class="feature-description">正在查询开放地图商家…</p>';
     try {
       const [result, coverage] = await Promise.all([
         request("/api/real-merchants?" + params.toString()),
@@ -381,8 +382,18 @@
           (verified ? "人工核验 · " + escapeHtml(merchant.verified_at || "") : "社区地图收录 · 未核实营业状态") +
           '</span><a href="' + escapeHtml(merchant.source_url) +
           '" target="_blank" rel="noopener noreferrer">查看地图来源 ↗</a></div></article>';
-      }).join("") : '<div class="saved-empty"><h2>这个区域还没有已核验的资料</h2>' +
-        '<p>暂时不会用模拟餐厅填充真实商家结果。可以切换商圈或稍后再看。</p></div>';
+      }).join("") : '<div class="saved-empty"><h2>这组条件下还没有社区收录资料</h2>' +
+        '<p>暂时不会用模拟餐厅填充真实商家结果。可以切换行政区或关键词。</p></div>';
+      if (result.total > 50) {
+        container.insertAdjacentHTML("beforeend",
+          '<div class="real-pagination">' +
+          '<span>第 ' + (page + 1) + ' 页 · 共 ' + result.total + ' 家（社区收录/核验）</span>' +
+          '<button type="button" class="soft-action" data-real-page="' + (page - 1) +
+          '"' + (page === 0 ? " disabled" : "") + '>上一页</button>' +
+          '<button type="button" class="soft-action" data-real-page="' + (page + 1) +
+          '"' + ((page + 1) * 50 >= result.total ? " disabled" : "") + '>下一页</button>' +
+          '</div>');
+      }
     } catch (error) {
       container.textContent = error.message;
     }
@@ -762,6 +773,11 @@
     const pageButton = event.target.closest("[data-page]");
     if (pageButton) {
       navigate(pageButton.dataset.page);
+      return;
+    }
+    const realPageButton = event.target.closest("[data-real-page]");
+    if (realPageButton && !realPageButton.disabled) {
+      renderRealCatalog(Number(realPageButton.dataset.realPage));
       return;
     }
     const quickButton = event.target.closest("[data-quick-prompt]");
