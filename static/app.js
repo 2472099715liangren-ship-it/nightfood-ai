@@ -355,16 +355,18 @@
         request("/api/real-merchants/coverage")
       ]);
       const count = document.getElementById("real-coverage-count");
-      if (count) count.textContent = "目前已核验 " + coverage.verified_total + " 家 · 覆盖武汉 " +
-        coverage.districts.filter(function (d) { return d.verified_count > 0; }).length + " 个行政区";
+      if (count) count.textContent = "社区收录 " + (coverage.community_total || 0) +
+        " 家 · 人工核验 " + coverage.verified_total + " 家";
       container.innerHTML = result.items.length ? result.items.map(function (merchant) {
+        const verified = merchant.data_quality === "verified";
         return '<article class="real-shop"><div><strong>' + escapeHtml(merchant.name) +
           '</strong><p>' + escapeHtml(merchant.district) + " · " + escapeHtml(merchant.address) +
           '</p><small>' + escapeHtml(merchant.cuisine) +
-          (merchant.price_per_person ? " · 人均约 ¥" + merchant.price_per_person : " · 价格待核实") +
-          '</small></div><div class="real-shop-meta"><span>核验于 ' +
-          escapeHtml(merchant.verified_at) + '</span><a href="' +
-          escapeHtml(merchant.source_url) + '" target="_blank" rel="noopener noreferrer">查看来源 ↗</a></div></article>';
+          (merchant.price_per_person ? " · 人均约 ¥" + merchant.price_per_person : " · 价格未提供") +
+          '</small></div><div class="real-shop-meta"><span>' +
+          (verified ? "人工核验 · " + escapeHtml(merchant.verified_at || "") : "社区地图收录 · 未核实营业状态") +
+          '</span><a href="' + escapeHtml(merchant.source_url) +
+          '" target="_blank" rel="noopener noreferrer">查看地图来源 ↗</a></div></article>';
       }).join("") : '<div class="saved-empty"><h2>这个区域还没有已核验的资料</h2>' +
         '<p>暂时不会用模拟餐厅填充真实商家结果。可以切换商圈或稍后再看。</p></div>';
     } catch (error) {
@@ -393,13 +395,14 @@
       "</form>" +
       '<section class="real-catalog-panel"><div class="real-catalog-title"><div>' +
         '<span class="eyebrow">REAL WUHAN DIRECTORY</span><h2>武汉真实商家资料</h2>' +
-        '<p>只展示核验过、附有来源的真实商家，与下面的示例店铺严格分开。</p>' +
+        '<p>公开地图收录不代表商家仍在营业；人工核验与社区收录分别标记，和下面的模拟店铺分开。</p>' +
         '</div><span id="real-coverage-count">统计中…</span></div>' +
         '<form id="real-search" class="real-search"><input id="real-keyword" placeholder="查找真实店名或地址" maxlength="80">' +
         '<select id="real-district"><option value="">武汉全市</option>' +
         selectOptions(["江岸区","江汉区","硚口区","汉阳区","武昌区","青山区",
           "洪山区","东西湖区","蔡甸区","江夏区","黄陂区","新洲区","汉南区"], "") +
         '</select><button class="button-primary">搜索</button></form>' +
+        '<p class="real-license">公开地图资料 © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors · ODbL</a>。地址、营业和价格请在出发前核实；地图未录入不代表没有这家店。</p>' +
         '<div id="real-catalog-results"></div></section>' +
       '<div class="directory-toolbar"><span id="merchant-count">正在整理演示商家…</span>' +
         '<span>资料均为研究演示内容</span></div>' +
