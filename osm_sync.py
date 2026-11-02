@@ -22,14 +22,27 @@ ENDPOINTS = (
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
 )
-OVERPASS_QUERY = """
-[out:json][timeout:85];
-area["boundary"="administrative"]["name"="武汉市"]->.wuhan;
-(
-  nwr(area.wuhan)["amenity"~"^(restaurant|fast_food|cafe|food_court)$"]["name"];
-);
-out center tags;
-"""
+# Start with small, geographically separate Wuhan samples to respect public
+# Overpass instance capacity. This is *not* full-city coverage.
+SAMPLE_BBOXES = (
+    (30.555, 114.245, 30.615, 114.315),  # Jianghan/Jiang'an central area
+    (30.525, 114.305, 30.585, 114.385),  # Wuchang
+    (30.475, 114.365, 30.535, 114.445),  # Guanggu/Hongshan
+    (30.525, 114.205, 30.585, 114.285),  # Hanyang/Qiaokou
+)
+
+
+def overpass_query(bbox):
+    south, west, north, east = bbox
+    return (
+        "[out:json][timeout:35];"
+        "(nwr[amenity~'^(restaurant|fast_food|cafe|food_court)$']"
+        "[name]({},{},{},{}););out center tags;".format(
+            south, west, north, east
+        )
+    )
+
+
 MAX_RECORDS = 2000
 
 
@@ -102,29 +115,57 @@ def parse_overpass_payload(payload):
 
 
 def fetch_wuhan_osm():
-    """At most two requests; no recurring mass-scraping of public Overpass."""
-    form = urllib.parse.urlencode({"data": OVERPASS_QUERY}).encode("utf-8")
-    last_error = None
-    for endpoint in ENDPOINTS:
-        request = urllib.request.Request(
-            endpoint,
-            data=form,
-            method="POST",
-            headers={
-                "Content-Type": "application/x-www-form-urlencoded",
-                "User-Agent": "NightFindWuhanCatalog/1.0 (public ODbL source, GitHub project)",
-                "Accept": "application/json",
-            },
+    """Small, bounded Overpass queries. No continuous or aggressive scraping."""
+    import time
+
+    all_rows = {}
+    errors = []
+    for index, bbox in enumerate(SAMPLE_BBOXES, 1):
+        form = urllib.parse.urlencode(
+            {"data": overpass_query(bbox)}
+        ).encode("utf-8")
+        completed = False
+        for endpoint in ENDPOINTS:
+            request = urllib.request.Request(
+                endpoint, data=form, method="POST",
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "User-Agent": "NightFindWuhanCatalog/1.1 (OSM ODbL snapshot)",
+                    "Accept": "application/json",
+                },
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=40) as response:
+                    raw = response.read(4_000_001)
+                    if len(raw) > 4_000_000:
+                        raise ValueError("单个分区响应超过 4 MB")
+                    records = parse_overpass_payload(
+                        json.loads(raw.decode("utf-8"))
+                    )
+                    for record in records:
+                        all_rows[record["external_id"]] = record
+                    print(
+                        "区块 {}/{}：获取 {} 条开放地图餐饮场所".format(
+                            index, len(SAMPLE_BBOXES), len(records)
+                        ), flush=True,
+                    )
+                    completed = True
+                    break
+            except (urllib.error.URLError, TimeoutError, ValueError,
+                    json.JSONDecodeError, OSError) as exc:
+                errors.append("{}: {}".format(endpoint, exc))
+        if not completed:
+            print("区块 {}/{} 获取失败（未包含在快照中）".format(
+                index, len(SAMPLE_BBOXES)
+            ), flush=True)
+        time.sleep(1)  # Gentle pacing for community infrastructure.
+
+    if not all_rows:
+        raise RuntimeError(
+            "未能从公开接口获取餐饮记录；不会生成虚假快照。"
+            + " 最近错误：" + (errors[-1] if errors else "无记录")
         )
-        try:
-            with urllib.request.urlopen(request, timeout=110) as response:
-                raw = response.read(12_000_001)
-                if len(raw) > 12_000_000:
-                    raise ValueError("Overpass 返回超过 12 MB，请缩小查询")
-                return parse_overpass_payload(json.loads(raw.decode("utf-8")))
-        except (urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
-            last_error = exc
-    raise RuntimeError("OSM 数据获取失败，请稍后重试：{}".format(last_error))
+    return [all_rows[key] for key in sorted(all_rows)][:MAX_RECORDS]
 
 
 def hydrate_osm_snapshot(connection, path=SNAPSHOT):
@@ -174,8 +215,8 @@ def main():
         json.dumps(rows, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
-    print("已从 OpenStreetMap 获取 {} 条带名称餐饮场所。".format(len(rows)))
-    print("注意：这是社区地图数据，非人工核验；请保留 ODbL 署名。")
+    print("从武汉部分城市区块的 OpenStreetMap 获取 {} 条带名称餐饮场所。".format(len(rows)))
+    print("注意：城市区块抽样并非全市完整覆盖；社区数据未核验，保留 ODbL 署名。")
 
 
 if __name__ == "__main__":
