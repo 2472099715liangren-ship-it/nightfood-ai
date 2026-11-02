@@ -13,7 +13,7 @@ class NightFindTests(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.original_path = database.DB_PATH
         database.DB_PATH = Path(self.temp_dir.name) / "nightfind-test.db"
-        database.initialize_database()
+        database.initialize_database(import_snapshot=False)
         with database.connect() as connection:
             database.ensure_session(connection, "test-session")
 
