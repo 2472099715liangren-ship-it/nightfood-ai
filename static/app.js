@@ -17,6 +17,8 @@
   let districts = [];
   let aiEnabled = false;
   let currentPage = "chat";
+  let realMapMode = "list";
+  let realMapItems = [];
   let conversation = [];
   let conversationContext = {};
   let savedIds = new Set();
@@ -370,20 +372,31 @@
         request("/api/real-merchants/coverage")
       ]);
       const count = document.getElementById("real-coverage-count");
-      if (count) count.textContent = "社区收录 " + (coverage.community_total || 0) +
-        " 家 · 人工核验 " + coverage.verified_total + " 家";
+      if (count) count.textContent = "OSM 候选 " + (coverage.candidate_total || 0) +
+        " 家 · 近两年资料 " + ((coverage.community_total || 0) + coverage.verified_total) + " 家";
+      realMapItems = result.items || [];
       container.innerHTML = result.items.length ? result.items.map(function (merchant) {
         const verified = merchant.data_quality === "verified";
-        return '<article class="real-shop"><div><strong>' + escapeHtml(merchant.name) +
+        const photo = merchant.photo_url
+          ? '<img class="real-shop-photo" loading="lazy" alt="' +
+            escapeHtml(merchant.name) + '经审核的店面照片" src="' +
+            escapeHtml(merchant.photo_url) + '">'
+          : '<div class="real-shop-photo-placeholder">📷 授权照片待核验</div>';
+        return '<article class="real-shop">' + photo +
+          '<div class="real-shop-main"><strong>' + escapeHtml(merchant.name) +
           '</strong><p>' + escapeHtml(merchant.district) + " · " + escapeHtml(merchant.address) +
           '</p><small>' + escapeHtml(merchant.cuisine) +
           (merchant.price_per_person ? " · 人均约 ¥" + merchant.price_per_person : " · 价格未提供") +
           '</small></div><div class="real-shop-meta"><span>' +
-          (verified ? "人工核验 · " + escapeHtml(merchant.verified_at || "") : "社区地图收录 · 未核实营业状态") +
-          '</span><a href="' + escapeHtml(merchant.source_url) +
-          '" target="_blank" rel="noopener noreferrer">查看地图来源 ↗</a></div></article>';
-      }).join("") : '<div class="saved-empty"><h2>这组条件下还没有社区收录资料</h2>' +
-        '<p>暂时不会用模拟餐厅填充真实商家结果。可以切换行政区或关键词。</p></div>';
+          (verified ? "人工核验 · " + escapeHtml(merchant.verified_at || "") :
+            "社区核查日期 " + escapeHtml(merchant.source_checked_at || "未记录")) +
+          '</span><button type="button" class="quiet-link" data-real-merchant="' +
+          merchant.id + '">查看资料 →</button>' +
+          '<a href="' + escapeHtml(merchant.source_url) +
+          '" target="_blank" rel="noopener noreferrer">OSM 来源 ↗</a></div></article>';
+      }).join("") : '<div class="saved-empty"><h2>当前没有符合两年期限的真实商户资料</h2>' +
+        '<p>未记录有效核查日期的 OSM 候选继续保存在数据库待复核，不能直接当作近两年有效资料展示。</p></div>';
+      updateRealMapView();
       if (result.total > 50) {
         container.insertAdjacentHTML("beforeend",
           '<div class="real-pagination">' +
@@ -396,6 +409,64 @@
       }
     } catch (error) {
       container.textContent = error.message;
+    }
+  }
+
+  function updateRealMapView() {
+    const container = document.getElementById("real-catalog-results");
+    const panel = document.getElementById("real-osm-map-panel");
+    if (!container || !panel) return;
+    const mapActive = realMapMode === "map";
+    container.hidden = mapActive;
+    panel.hidden = !mapActive;
+    document.querySelectorAll("[data-osm-view]").forEach(function (button) {
+      const active = button.dataset.osmView === realMapMode;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+    if (!mapActive) return;
+    const status = document.getElementById("real-map-status");
+    if (!window.NightFindWuhanMap) {
+      status.textContent = "地图组件不可用，请使用列表";
+      return;
+    }
+    const result = window.NightFindWuhanMap.draw(
+      document.getElementById("real-osm-map"), realMapItems
+    );
+    status.textContent = result.available
+      ? "当前页地图标注 " + result.pins + " 家有效来源的门店"
+      : "地图组件不可用，请使用列表";
+  }
+
+  async function showRealMerchant(merchantId) {
+    try {
+      const merchant = await request("/api/real-merchants/" + merchantId);
+      const gallery = (merchant.photos || []).map(function (photo) {
+        return '<figure class="real-shop-gallery-item"><img loading="lazy" alt="' +
+          escapeHtml(merchant.name) + '店面照片" src="' +
+          escapeHtml(photo.photo_url) + '"><figcaption>拍摄于 ' +
+          escapeHtml(photo.taken_at) + ' · ' +
+          escapeHtml(photo.copyright_holder) + '</figcaption></figure>';
+      }).join("");
+      detail.innerHTML =
+        '<span class="eyebrow">RECENT WUHAN MERCHANT</span><h2>' +
+          escapeHtml(merchant.name) + '</h2>' +
+        '<div class="real-shop-gallery">' +
+          (gallery || '<p class="real-photo-empty">📷 暂无可合法展示的近两年店面照片</p>') +
+        '</div>' +
+        '<p class="detail-description">' + escapeHtml(merchant.district) + ' · ' +
+          escapeHtml(merchant.address) + '</p>' +
+        '<p class="detail-description">' + escapeHtml(merchant.cuisine) +
+          (merchant.price_per_person == null ? ' · 人均价格未知' :
+            ' · 人均约 ¥' + merchant.price_per_person) + '</p>' +
+        '<p class="detail-description">资料核查：' +
+          escapeHtml(merchant.source_checked_at || '无') +
+          (merchant.data_quality === "verified" ? ' · 门店已人工核验' : ' · OSM 社区记录，未独立核验营业状态') +
+          '</p><p class="real-license">资料来源：<a target="_blank" rel="noopener noreferrer" href="' +
+          escapeHtml(merchant.source_url) + '">OpenStreetMap / 数据来源 ↗</a></p>';
+      dialog.showModal();
+    } catch (error) {
+      showToast(error.message);
     }
   }
 
@@ -420,7 +491,7 @@
       "</form>" +
       '<section class="real-catalog-panel"><div class="real-catalog-title"><div>' +
         '<span class="eyebrow">REAL WUHAN DIRECTORY</span><h2>武汉真实商家资料</h2>' +
-        '<p>公开地图收录不代表商家仍在营业；人工核验与社区收录分别标记，和下面的模拟店铺分开。</p>' +
+        '<p>仅公开最近两年内有逐店核查日期的资料；834 条 OSM 候选不等于已核验营业的餐厅。下面的演示数据单独显示。</p>' +
         '</div><span id="real-coverage-count">统计中…</span></div>' +
         '<form id="real-search" class="real-search"><input id="real-keyword" placeholder="查找真实店名或地址" maxlength="80">' +
         '<select id="real-district"><option value="">武汉全市</option>' +
@@ -428,7 +499,13 @@
           "洪山区","东西湖区","蔡甸区","江夏区","黄陂区","新洲区","汉南区"], "") +
         '</select><button class="button-primary">搜索</button></form>' +
         '<p class="real-license">公开地图资料 © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors · ODbL</a>。地址、营业和价格请在出发前核实；地图未录入不代表没有这家店。</p>' +
-        '<div id="real-catalog-results"></div></section>' +
+        '<div class="real-map-actions" role="group" aria-label="真实商家显示方式">' +
+          '<button type="button" class="soft-action is-active" data-osm-view="list" aria-pressed="true">☷ 列表</button>' +
+          '<button type="button" class="soft-action" data-osm-view="map" aria-pressed="false">⌖ 地图</button>' +
+          '<span id="real-map-status">只展示近两年有核查依据的门店点位</span></div>' +
+        '<div id="real-catalog-results"></div>' +
+        '<div id="real-osm-map-panel" hidden><div id="real-osm-map" class="real-osm-map" role="region" aria-label="武汉真实门店分布图"></div>' +
+          '<p class="real-map-caption">地图标记只使用有效核查日期的真实坐标；地图瓦片仅供低流量预览。</p></div></section>' +
       '<div class="directory-toolbar"><span id="merchant-count">正在整理演示商家…</span>' +
         '<span>资料均为研究演示内容</span></div>' +
       '<div id="merchant-grid" class="merchant-grid"></div>';
@@ -757,6 +834,9 @@
   }
 
   async function navigate(page) {
+    if (currentPage === "merchants" && page !== "merchants" && window.NightFindWuhanMap) {
+      window.NightFindWuhanMap.dispose();
+    }
     if (page === "chat") {
       renderChatPage();
     } else if (page === "merchants") {
@@ -773,6 +853,17 @@
     const pageButton = event.target.closest("[data-page]");
     if (pageButton) {
       navigate(pageButton.dataset.page);
+      return;
+    }
+    const osmSwitch = event.target.closest("[data-osm-view]");
+    if (osmSwitch) {
+      realMapMode = osmSwitch.dataset.osmView === "map" ? "map" : "list";
+      updateRealMapView();
+      return;
+    }
+    const realMerchant = event.target.closest("[data-real-merchant]");
+    if (realMerchant) {
+      showRealMerchant(Number(realMerchant.dataset.realMerchant));
       return;
     }
     const realPageButton = event.target.closest("[data-real-page]");
