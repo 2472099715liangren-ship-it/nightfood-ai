@@ -304,3 +304,65 @@
   .real-pagination { justify-content: center; }
   .real-pagination > span { width: 100%; text-align: center; }
 }
+
+
+/* Recent, licensed storefront photographs and user-controlled Wuhan map. */
+.real-shop-main { flex: 1; min-width: 0; }
+.real-shop-photo, .real-shop-photo-placeholder {
+  flex: 0 0 116px;
+  width: 116px;
+  height: 98px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: #e9f1e5;
+}
+.real-shop-photo-placeholder {
+  display: grid;
+  place-items: center;
+  color: #829a7d;
+  font-size: 10px;
+  text-align: center;
+  padding: 8px;
+}
+.real-map-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0 13px;
+}
+.real-map-actions span { color: #80947a; font-size: 10px; margin-left: auto; }
+.real-osm-map {
+  height: clamp(340px, 48vw, 485px);
+  min-height: 340px;
+  background: #e8f0e3;
+  border-radius: 14px;
+  overflow: hidden;
+  width: 100%;
+}
+.real-map-caption { color: #899a85; font-size: 10px; margin: 9px 2px; }
+.real-map-popup { color: #47644b; max-width: 240px; }
+.real-map-popup p { color: #718571; font-size: 10px; }
+.real-map-popup button {
+  border: 1px solid #cadfbe;
+  background: #e5efdd;
+  color: #446c4c;
+  border-radius: 10px;
+  padding: 7px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  display: block;
+  margin-top: 8px;
+}
+.real-shop-gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 11px; margin: 15px 0; }
+.real-shop-gallery-item { margin: 0; border-radius: 13px; overflow: hidden; background: #f1f6ed; }
+.real-shop-gallery-item img { display: block; width: 100%; aspect-ratio: 4/3; object-fit: cover; }
+.real-shop-gallery-item figcaption { color: #7f947d; font-size: 10px; padding: 8px; }
+.real-photo-empty { padding: 16px; background: #f2f7ed; border-radius: 13px; color: #81977d; font-size: 11px; }
+@media (max-width: 680px) {
+  .real-shop-photo, .real-shop-photo-placeholder { width: 100%; flex-basis: auto; height: 140px; }
+  .real-map-actions span { width: 100%; margin-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .real-shop-photo { transition: none; }
+}
