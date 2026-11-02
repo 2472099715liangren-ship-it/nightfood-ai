@@ -171,6 +171,81 @@ class HttpApiTests(unittest.TestCase):
         self.assertEqual(detail["source_name"], "HTTP 商家授权测试")
         self.assertIsNone(detail["price_per_person"])
 
+    def test_public_photo_route_requires_approval_and_live_source_rights(self):
+        from unittest.mock import patch
+        import restaurant_photos
+        from restaurant_catalog import (
+            import_rows, register_source, set_review_status, validate_restaurant_row
+        )
+        from datetime import date
+
+        with database.connect() as connection:
+            register_source(
+                connection, "photo_http", "门店图片授权测试",
+                "merchant_submission", "", "", "测试授权说明",
+                "test-editor", rights_confirmed=True,
+            )
+            clean = validate_restaurant_row(
+                {
+                    "external_id": "photo-http-1",
+                    "name": "HTTP 图片测试门店",
+                    "district": "江岸区",
+                    "address": "武汉市江岸区测试路 6 号",
+                    "source_url": "merchant-submission:http-photo-1",
+                    "source_updated_at": date.today().isoformat(),
+                    "business_status": "unknown",
+                }, {"江岸区"},
+            )
+            import_rows(
+                connection, "photo_http", [(2, clean)], [],
+                "photo-http.csv", "f" * 64, "editor",
+            )
+            identifier = connection.execute(
+                "SELECT id FROM real_restaurants WHERE external_id = 'photo-http-1'"
+            ).fetchone()["id"]
+            set_review_status(connection, [identifier], "verified", "editor")
+
+            image = Path(self.temp_dir.name) / "shop.jpg"
+            image.write_bytes(b"\xff\xd8\xff" + b"\x00" * 260 + b"\xff\xd9")
+            with patch.object(
+                restaurant_photos, "PHOTO_ROOT", Path(self.temp_dir.name) / "photos"
+            ):
+                # App imports the helper directly but calls the photo module's
+                # public_photo_path: patch both the imported function's global.
+                photo_id = restaurant_photos.add_storefront_photo(
+                    connection, identifier, image, date.today().isoformat(),
+                    "merchant-submission:photo-http-1", "门店经营者",
+                    "商家已授权展示图片", "editor", True,
+                )
+                connection.commit()
+                route = self.base_url + "/restaurant-photo/" + str(photo_id)
+                with self.assertRaises(urllib.error.HTTPError) as blocked:
+                    urllib.request.urlopen(route, timeout=3)
+                self.assertEqual(blocked.exception.code, 404)
+                restaurant_photos.review_photo(
+                    connection, photo_id, "verified", "editor"
+                )
+                connection.commit()
+                with urllib.request.urlopen(route, timeout=3) as response:
+                    self.assertEqual(response.headers["Content-Type"], "image/jpeg")
+                    self.assertGreater(len(response.read()), 128)
+                connection.execute(
+                    """
+                    UPDATE restaurant_sources SET permission_status = 'suspended'
+                    WHERE source_code = 'photo_http'
+                    """
+                )
+                connection.commit()
+                with self.assertRaises(urllib.error.HTTPError) as revoked:
+                    urllib.request.urlopen(route, timeout=3)
+                self.assertEqual(revoked.exception.code, 404)
+
+    def test_map_script_is_served_without_api_key(self):
+        with urllib.request.urlopen(self.base_url + "/wuhan_map.js") as response:
+            script = response.read().decode("utf-8")
+        self.assertIn("NightFindWuhanMap", script)
+        self.assertIn("tile.openstreetmap.org", script)
+
     def test_chat_followups_have_actionable_prompts(self):
         first = self.call_api("/api/chat", {
             "message": "今晚想吃烧烤",
