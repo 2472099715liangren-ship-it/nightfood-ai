@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - "redesign/**"
+      - "feature/**"
   pull_request:
     branches:
       - main
+      - "redesign/**"
 
 jobs:
   test:
@@ -19,7 +21,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Compile Python modules
-        run: python -m compileall -q app.py database.py services.py tests
+        run: python -m compileall -q app.py database.py services.py conversation.py comparison.py tests
       - name: Check browser JavaScript syntax
         run: node --check static/app.js
       - name: Run unit and HTTP tests
