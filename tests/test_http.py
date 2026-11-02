@@ -133,9 +133,16 @@ class HttpApiTests(unittest.TestCase):
             pending = connection.execute(
                 "SELECT id FROM real_restaurants WHERE external_id = 'http-real-1'"
             ).fetchone()
-            set_review_status(
+            changed = set_review_status(
                 connection, [pending["id"]], "verified", "reviewer", "HTTP integration test"
             )
+            self.assertEqual(changed, 1)
+            stored = connection.execute(
+                "SELECT record_status, district FROM real_restaurants WHERE id = ?",
+                (pending["id"],),
+            ).fetchone()
+            self.assertEqual(stored["record_status"], "verified")
+            self.assertEqual(stored["district"], "江岸区")
 
         listing = self.call_api("/api/real-restaurants?district=%E6%B1%9F%E5%B2%B8%E5%8C%BA")
         self.assertEqual(listing["total"], 1)
