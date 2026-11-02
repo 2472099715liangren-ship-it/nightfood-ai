@@ -152,6 +152,14 @@ class HttpApiTests(unittest.TestCase):
             self.assertEqual(len(direct_listing), 1)
             connection.commit()
 
+        from restaurant_catalog import list_real_restaurants
+        with database.connect() as verification_connection:
+            self.assertEqual(len(list_real_restaurants(verification_connection)), 1)
+        from app import connect as handler_connect
+        self.assertIs(handler_connect.__globals__, database.__dict__)
+        with handler_connect() as handler_connection:
+            self.assertEqual(len(list_real_restaurants(handler_connection)), 1)
+
         unfiltered = self.call_api("/api/real-restaurants")
         self.assertEqual(unfiltered["total"], 1)
         listing = self.call_api("/api/real-restaurants?district=%E6%B1%9F%E5%B2%B8%E5%8C%BA")
