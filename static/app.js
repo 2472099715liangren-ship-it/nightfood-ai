@@ -8,6 +8,9 @@
   const dialog = document.getElementById("merchant-dialog");
   const detail = document.getElementById("merchant-detail");
   const toastNode = document.getElementById("toast");
+  const compareTray = document.getElementById("compare-tray");
+  const compareDialog = document.getElementById("compare-dialog");
+  const compareDetail = document.getElementById("compare-detail");
   const sessionKey = "nightfind-session";
   const sessionId = getSessionId();
 
@@ -16,6 +19,10 @@
   let currentPage = "chat";
   let conversation = [];
   let conversationContext = {};
+  let savedIds = new Set();
+  let comparisonIds = new Map();
+  let seenRecommendationIds = new Set();
+  let chatBusy = false;
   let toastTimer = null;
 
   function getSessionId() {
@@ -118,9 +125,17 @@
           (merchant.closes ? "<span>演示营业至次日 " + (merchant.closes - 24) + ":00</span>" : "") +
         "</div>" +
         '<div class="tag-row">' + tags + score + "</div>" +
-        '<button class="quiet-link" type="button" data-merchant="' + merchant.id + '">' +
-          (compact ? "看看这家 →" : "了解这家店 →") +
-        "</button>" +
+        '<div class="merchant-actions">' +
+          '<button class="quiet-link" type="button" data-merchant="' + merchant.id + '">' +
+            (compact ? "看看这家 →" : "了解这家店 →") +
+          "</button>" +
+          '<button class="soft-action ' + (savedIds.has(merchant.id) ? "is-active" : "") +
+            '" type="button" data-favorite="' + merchant.id + '" aria-pressed="' + savedIds.has(merchant.id) +
+            '">' + (savedIds.has(merchant.id) ? "♥ 已收藏" : "♡ 今晚清单") + "</button>" +
+          '<button class="soft-action ' + (comparisonIds.has(merchant.id) ? "is-active" : "") +
+            '" type="button" data-compare="' + merchant.id + '" aria-pressed="' + comparisonIds.has(merchant.id) +
+            '">' + (comparisonIds.has(merchant.id) ? "✓ 已选择" : "⇄ 对比") + "</button>" +
+        "</div>" +
       "</div>" +
     "</article>";
   }
@@ -329,6 +344,10 @@
           "</span><span>等位约 " + merchant.wait + " 分钟</span></div>" +
         '<p class="detail-address">' + escapeHtml(merchant.address_label || "商圈信息待补充") +
           " · 基础评分为演示值</p>" +
+        '<div class="merchant-actions">' +
+          '<button class="soft-action" type="button" data-favorite="' + merchant.id + '">♡ 今晚清单</button>' +
+          '<button class="soft-action" type="button" data-compare="' + merchant.id + '">⇄ 加入对比</button>' +
+        "</div>" +
         "<h3>菜单小记</h3>" + (dishes || '<p class="detail-description">暂时还没有菜单信息。</p>') +
         "<h3>大家的反馈</h3>" + (reviews || '<p class="detail-description">还没有收到评价。</p>') +
         '<form id="merchant-feedback" class="detail-feedback">' +
@@ -426,13 +445,48 @@
       await renderMerchantPage();
     } else if (page === "suggestions") {
       await renderSuggestionsPage();
+    } else if (page === "saved") {
+      await renderSavedPage();
     }
+    refreshActionButtons();
   }
 
   document.addEventListener("click", function (event) {
     const pageButton = event.target.closest("[data-page]");
     if (pageButton) {
       navigate(pageButton.dataset.page);
+      return;
+    }
+    const quickButton = event.target.closest("[data-quick-prompt]");
+    if (quickButton) {
+      sendQuickPrompt(quickButton.dataset.quickPrompt);
+      return;
+    }
+    if (event.target.closest("[data-reset-chat]")) {
+      conversation = [];
+      conversationContext = {};
+      seenRecommendationIds.clear();
+      renderChatPage();
+      showToast("从头聊聊，今晚重新挑。");
+      return;
+    }
+    const favoriteButton = event.target.closest("[data-favorite]");
+    if (favoriteButton) {
+      toggleFavorite(Number(favoriteButton.dataset.favorite));
+      return;
+    }
+    const compareButton = event.target.closest("[data-compare]");
+    if (compareButton) {
+      toggleComparison(Number(compareButton.dataset.compare));
+      return;
+    }
+    if (event.target.closest("[data-open-compare]")) {
+      showComparison();
+      return;
+    }
+    if (event.target.closest("[data-clear-compare]")) {
+      comparisonIds.clear();
+      refreshActionButtons();
       return;
     }
     const merchantButton = event.target.closest("[data-merchant]");
@@ -449,12 +503,21 @@
     if (event.target === dialog) dialog.close();
   });
 
+  document.querySelector(".compare-close").addEventListener("click", function () {
+    compareDialog.close();
+  });
+  compareDialog.addEventListener("click", function (event) {
+    if (event.target === compareDialog) compareDialog.close();
+  });
+
   async function start() {
     try {
       const bootstrap = await request("/api/bootstrap");
       districts = bootstrap.districts || [];
       aiEnabled = Boolean(bootstrap.ai_enabled);
+      savedIds = new Set(bootstrap.favorites || []);
       renderChatPage();
+      refreshActionButtons();
     } catch (error) {
       app.innerHTML = '<div class="empty-state">暂时连接不上夜寻服务。请确认终端里的服务仍在运行，然后刷新页面。</div>';
       showToast(error.message);
