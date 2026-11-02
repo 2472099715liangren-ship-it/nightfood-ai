@@ -288,7 +288,7 @@
       let extra = "";
       if (result.items && result.items.length) {
         extra += '<div class="chat-recommendations"><div class="recommendation-heading">' +
-          "<strong>我帮你挑出的几家</strong><span>" + result.total +
+          "<strong>模拟商家推荐 · 仅供测试</strong><span>" + result.total +
           " 家符合当前条件</span></div>" +
           result.items.slice(0, 3).map(function (merchant) {
             seenRecommendationIds.add(merchant.id);
