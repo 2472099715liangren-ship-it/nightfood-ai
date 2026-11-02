@@ -366,3 +366,50 @@
 @media (prefers-reduced-motion: reduce) {
   .real-shop-photo { transition: none; }
 }
+
+.real-shop-photo-figure {
+  flex: 0 0 132px;
+  width: 132px;
+  margin: 0;
+}
+.real-shop-photo-figure .real-shop-photo {
+  display: block;
+  width: 132px;
+  height: 98px;
+}
+.real-shop-photo-figure figcaption {
+  color: #81927d;
+  font-size: 9px;
+  line-height: 1.45;
+  padding-top: 5px;
+}
+.real-map-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  padding: 10px 4px 2px;
+  color: #738771;
+  font-size: 10px;
+}
+.real-map-legend span { display: inline-flex; align-items: center; gap: 7px; }
+.real-map-legend i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+.real-map-legend .verified-dot { background: #80a97e; border: 2px solid #3f6a49; }
+.real-map-legend .community-dot { background: #a9c1d0; border: 2px solid #718a9c; }
+.real-map-quality {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 4px 7px;
+  font-size: 10px;
+}
+.real-map-quality.verified { color: #456c4c; background: #e8f1e3; }
+.real-map-quality.community { color: #5f7888; background: #edf3f7; }
+@media (max-width: 680px) {
+  .real-shop-photo-figure { width: 100%; flex-basis: auto; }
+  .real-shop-photo-figure .real-shop-photo { width: 100%; height: 145px; }
+}
