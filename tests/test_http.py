@@ -17,6 +17,8 @@ class HttpApiTests(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.original_db_path = database.DB_PATH
         self.original_api_key = os.environ.get("OPENAI_API_KEY")
+        self.original_debug_catalog = os.environ.get("NIGHTFIND_DEBUG_CATALOG")
+        os.environ["NIGHTFIND_DEBUG_CATALOG"] = "1"
         database.DB_PATH = Path(self.temp_dir.name) / "http-test.db"
         os.environ["OPENAI_API_KEY"] = ""
         database.initialize_database()
@@ -36,6 +38,10 @@ class HttpApiTests(unittest.TestCase):
             os.environ.pop("OPENAI_API_KEY", None)
         else:
             os.environ["OPENAI_API_KEY"] = self.original_api_key
+        if self.original_debug_catalog is None:
+            os.environ.pop("NIGHTFIND_DEBUG_CATALOG", None)
+        else:
+            os.environ["NIGHTFIND_DEBUG_CATALOG"] = self.original_debug_catalog
         self.temp_dir.cleanup()
 
     def call_api(self, path, payload=None):
