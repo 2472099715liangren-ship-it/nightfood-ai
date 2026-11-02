@@ -415,6 +415,12 @@ def chat(connection, payload, session_id, districts):
         limit=4,
     )
     real_places = real_query["items"]
+    if real_places:
+        reply = (
+            "已找到武汉开放地图的社区商家资料，具体位置和营业情况请打开地图来源核实。"
+            "下面提到的价格、等位和匹配度仍是模拟推荐，只用于测试。\n\n"
+            + reply
+        )
 
     return {
         "reply": reply,
