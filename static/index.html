@@ -1,1 +1,44 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>夜寻 · 武汉夜间餐饮决策实验室</title><link rel="stylesheet" href="/style.css"></head><body><aside><a class="brand" href="/">◒ <span>夜寻<small>NIGHTFIND · WUHAN</small></span></a><div class="side-label">探索你的城市夜晚</div><nav><button class="active" data-page="discover">✦ <span>发现好味</span><b>01</b></button><button data-page="districts">▦ <span>商圈漫游</span><b>02</b></button><button data-page="merchants">⌂ <span>商家简介</span><b>03</b></button><button data-page="reviews">✎ <span>用户评价</span><b>04</b></button><button data-page="chat">✧ <span>AI 对话</span><b>05</b></button><button data-page="favorites">♡ <span>我的收藏</span><b id="favCount">0</b></button><button data-page="research">◷ <span>研究观察</span><b>04</b></button></nav><div class="side-bottom"><span class="live"></span> 城市入夜，味蕾醒来<p>让每一次推荐，都有据可循。</p><div class="city">武汉 WUHAN <span>↗</span></div><small>夜间餐饮 · 可解释推荐研究原型</small></div></aside><main><header><div>城市探索 <span>/</span> <strong id="crumb">发现好味</strong></div><div class="header-right"><span class="live"></span> 夜间模式 <span class="divider">|</span> <span class="avatar">访</span> 访客体验</div></header><section id="page"></section><footer>夜寻 NIGHTFIND <span>以武汉为起点，理解每一种夜间就餐需求。</span><span>研究演示 · 非商用平台</span></footer></main><div id="toast" role="status"></div><dialog id="detail"><button class="close" onclick="this.closest('dialog').close()" aria-label="关闭">×</button><div id="detailBody"></div></dialog><script src="/app.js"></script><script src="/features.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f8f0">
+  <meta name="description" content="夜寻，轻松找到今晚适合你的那一餐。">
+  <title>夜寻 · 今晚吃点什么</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="ambient ambient-one" aria-hidden="true"></div>
+  <div class="ambient ambient-two" aria-hidden="true"></div>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="夜寻首页">
+      <span class="brand-mark">夜</span>
+      <span class="brand-copy"><strong>夜寻</strong><small>今晚吃点什么</small></span>
+    </a>
+    <nav class="main-nav" aria-label="主导航">
+      <button class="nav-link active" data-page="chat">聊聊今晚</button>
+      <button class="nav-link" data-page="merchants">商家小册</button>
+      <button class="nav-link" data-page="suggestions">留言建议</button>
+    </nav>
+    <div class="header-note"><span class="status-dot"></span><span>慢慢挑，不着急</span></div>
+  </header>
+
+  <main id="app" class="page-shell">
+    <div class="loading-state">正在准备今晚的菜单…</div>
+  </main>
+
+  <footer class="site-footer">
+    <a class="footer-brand" href="/">夜寻</a>
+    <span>把选择交给今晚的胃口，也把决定留给自己。</span>
+    <span>研究原型 · 演示商户数据</span>
+  </footer>
+
+  <dialog id="merchant-dialog" class="merchant-dialog">
+    <button class="dialog-close" type="button" aria-label="关闭">×</button>
+    <div id="merchant-detail"></div>
+  </dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
