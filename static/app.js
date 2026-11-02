@@ -535,8 +535,10 @@
         "<h3>营业时间</h3>" + (hours || '<p class="detail-description">营业时间尚未核验。</p>') +
         "<h3>已核验菜品</h3>" + (dishes || '<p class="detail-description">暂时没有已核验的菜单资料。</p>') +
         '<p class="real-source-note">资料来源：' + escapeHtml(restaurant.source_name) +
-          ' · <a href="' + escapeHtml(restaurant.source_url) +
-          '" target="_blank" rel="noopener noreferrer">查看来源凭证 ↗</a></p>' +
+          (restaurant.source_url.indexOf("merchant-submission:") === 0
+            ? " · 商家授权提交凭证"
+            : ' · <a href="' + escapeHtml(restaurant.source_url) +
+              '" target="_blank" rel="noopener noreferrer">查看来源凭证 ↗</a>') + "</p>" +
         '<p class="real-source-note">最近人工核验：' +
           escapeHtml(restaurant.verified_at || "日期未记录") +
           "。营业状态并非实时信息，请到店前再次确认。</p>";
