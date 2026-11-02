@@ -81,12 +81,12 @@ def add_photo(
             """
             INSERT INTO real_merchant_photos(
                 merchant_id,image_filename,taken_at,source_url,
-                copyright_holder,license_note,permission_confirmed
-            ) VALUES (?,?,?,?,?,?,1)
+                copyright_holder,license_note,permission_confirmed,created_by
+            ) VALUES (?,?,?,?,?,?,1,?)
             """,
             (
                 merchant_id, filename, taken_at, source_url,
-                copyright_holder.strip(), license_note.strip(),
+                copyright_holder.strip(), license_note.strip(), operator.strip(),
             ),
         )
     except Exception:
