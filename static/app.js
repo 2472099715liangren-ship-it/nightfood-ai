@@ -178,6 +178,11 @@
         document.getElementById("chat-form").requestSubmit();
       });
     });
+
+    // Keep the conversation when the visitor switches to another section.
+    conversation.forEach(function (entry) {
+      appendMessage(entry.role, entry.content);
+    });
   }
 
   function appendMessage(role, text, extraHtml) {
