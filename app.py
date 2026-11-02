@@ -29,7 +29,8 @@ from database import (
 )
 from services import SCENES, chat
 from comparison import compare_merchants
-from real_catalog import public_real_merchants, catalog_coverage
+from real_catalog import public_real_merchants, catalog_coverage, get_public_real_merchant
+from merchant_photos import public_photo_file, safe_image_path
 
 
 ROOT = Path(__file__).resolve().parent
@@ -41,6 +42,7 @@ STATIC_FILES = {
     "/style.css": "style.css",
     "/experience.css": "experience.css",
     "/app.js": "app.js",
+    "/wuhan_map.js": "wuhan_map.js",
 }
 
 
@@ -100,10 +102,32 @@ class NightFindHandler(BaseHTTPRequestHandler):
             content_type += "; charset=utf-8"
         self._send_bytes(file_path.read_bytes(), content_type)
 
+    def _serve_real_photo(self, path):
+        identifier = path.removeprefix("/real-photo/")
+        if not identifier.isdigit():
+            self._send_json({"error": "照片不存在"}, 404)
+            return
+        try:
+            with connect() as connection:
+                entry = public_photo_file(connection, int(identifier))
+            if entry is None:
+                self._send_json({"error": "照片未经审核或资料已失效"}, 404)
+                return
+            path = safe_image_path(entry["image_filename"])
+            mime = {
+                ".jpg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"
+            }.get(path.suffix)
+            self._send_bytes(path.read_bytes(), mime or "application/octet-stream")
+        except (OSError, ValueError):
+            self._send_json({"error": "照片暂不可用"}, 404)
+
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
 
+        if path.startswith("/real-photo/"):
+            self._serve_real_photo(path)
+            return
         if not path.startswith("/api/"):
             self._serve_static(path)
             return
@@ -140,6 +164,15 @@ class NightFindHandler(BaseHTTPRequestHandler):
 
                 if path == "/api/real-merchants/coverage":
                     self._send_json(catalog_coverage(connection))
+                    return
+
+                if path.startswith("/api/real-merchants/"):
+                    merchant_id = self._resource_id(path, "/api/real-merchants/")
+                    item = get_public_real_merchant(connection, merchant_id)
+                    if item is None:
+                        self._send_json({"error": "门店核验资料不足或已过期"}, 404)
+                    else:
+                        self._send_json(item)
                     return
 
                 if path == "/api/merchants":
