@@ -98,6 +98,52 @@ class HttpApiTests(unittest.TestCase):
         self.assertEqual(updated_merchant["reviews"][0]["rating"], 5)
 
 
+    def test_real_catalog_api_keeps_demo_data_separate(self):
+        areas = self.call_api("/api/real-areas")
+        districts = [item for item in areas["items"]
+                     if item["area_type"] == "administrative_district"]
+        self.assertEqual(len(districts), 13)
+        summary = self.call_api("/api/real-catalog/summary")
+        self.assertEqual(summary["total_verified"], 0)
+        self.assertEqual(self.call_api("/api/real-restaurants")["items"], [])
+
+        from restaurant_catalog import (
+            import_rows, register_source, set_review_status, validate_restaurant_row
+        )
+        row = {
+            "external_id": "http-real-1",
+            "name": "HTTP 真实餐厅测试",
+            "district": "江岸区",
+            "address": "武汉市江岸区测试路 1 号",
+            "source_url": "merchant-submission:http-test-1",
+            "business_status": "unknown",
+        }
+        with database.connect() as connection:
+            register_source(
+                connection, "http_merchant", "HTTP 商家授权测试",
+                "merchant_submission", "", "",
+                "测试使用的商家授权记录", "test-operator", rights_confirmed=True,
+            )
+            clean = validate_restaurant_row(row, {"江岸区"})
+            result = import_rows(
+                connection, "http_merchant", [(2, clean)], [],
+                "http-test.csv", "c" * 64, "test-operator",
+            )
+            self.assertEqual(result["inserted_rows"], 1)
+            pending = connection.execute(
+                "SELECT id FROM real_restaurants WHERE external_id = 'http-real-1'"
+            ).fetchone()
+            set_review_status(
+                connection, [pending["id"]], "verified", "reviewer", "HTTP integration test"
+            )
+
+        listing = self.call_api("/api/real-restaurants?district=%E6%B1%9F%E5%B2%B8%E5%8C%BA")
+        self.assertEqual(listing["total"], 1)
+        self.assertEqual(listing["items"][0]["name"], "HTTP 真实餐厅测试")
+        detail = self.call_api("/api/real-restaurants/" + str(listing["items"][0]["id"]))
+        self.assertEqual(detail["source_name"], "HTTP 商家授权测试")
+        self.assertIsNone(detail["price_per_person"])
+
     def test_chat_followups_have_actionable_prompts(self):
         first = self.call_api("/api/chat", {
             "message": "今晚想吃烧烤",
