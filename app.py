@@ -31,6 +31,7 @@ from services import SCENES, chat
 from comparison import compare_merchants
 from restaurant_photos import public_photo_path
 from restaurant_catalog import (
+    count_real_restaurants,
     get_real_restaurant,
     get_public_photo_file,
     list_real_restaurants,
@@ -177,14 +178,31 @@ class NightFindHandler(BaseHTTPRequestHandler):
                             raise ValueError("人均预算必须是数字") from error
                         if not 1 <= max_price <= 5000:
                             raise ValueError("人均预算范围为 1–5000 元")
+                    try:
+                        page = int(query.get("page", ["1"])[0])
+                        page_size = int(query.get("page_size", ["48"])[0])
+                    except ValueError as error:
+                        raise ValueError("分页参数必须为整数") from error
+                    if not 1 <= page <= 100000 or not 1 <= page_size <= 100:
+                        raise ValueError("分页参数超出范围")
+                    filters = {
+                        "keyword": query.get("keyword", [""])[0],
+                        "district": query.get("district", [""])[0],
+                        "cuisine": query.get("cuisine", [""])[0],
+                        "max_price": max_price,
+                    }
+                    total = count_real_restaurants(connection, **filters)
                     items = list_real_restaurants(
-                        connection,
-                        keyword=query.get("keyword", [""])[0],
-                        district=query.get("district", [""])[0],
-                        cuisine=query.get("cuisine", [""])[0],
-                        max_price=max_price,
+                        connection, **filters, limit=page_size,
+                        offset=(page - 1) * page_size,
                     )
-                    self._send_json({"items": items, "total": len(items)})
+                    self._send_json({
+                        "items": items,
+                        "total": total,
+                        "page": page,
+                        "page_size": page_size,
+                        "has_more": page * page_size < total,
+                    })
                     return
 
                 if path.startswith("/api/real-restaurants/"):
