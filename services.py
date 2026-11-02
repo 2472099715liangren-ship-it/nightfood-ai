@@ -78,11 +78,13 @@ def parse_preferences(message, context, districts):
             break
 
     budget_match = re.search(
-        r"(?:人均|预算|每人|每位|控制在|不超过|最多)\s*[¥￥]?\s*(\d{1,3})",
+        r"(?:人均|预算|每人|每位|控制在|不超过|最多)(?:在|为|约)?\s*[¥￥]?\s*(\d{1,3})",
         message,
     )
     if not budget_match:
         budget_match = re.search(r"[¥￥]\s*(\d{1,3})", message)
+    if not budget_match:
+        budget_match = re.search(r"(\d{1,3})\s*(?:元|块)(?:以内|左右)?", message)
     if budget_match:
         value = int(budget_match.group(1))
         if 10 <= value <= 500:
@@ -99,6 +101,8 @@ def parse_preferences(message, context, districts):
             if 0 <= value <= 120:
                 preferences["wait"] = value
             break
+    if any(word in message for word in ("不想排队", "不想等", "不排队")):
+        preferences["wait"] = min(preferences["wait"], 10)
 
     time_match = re.search(
         r"(凌晨|早上|上午|中午|下午|傍晚|晚上|今晚)?\s*"
@@ -359,6 +363,8 @@ def chat(connection, payload, session_id, districts):
         message, payload.get("context"), districts
     )
     items = recommend(connection, preferences, session_id)
+    # Finish the short database write before waiting for an external AI response.
+    connection.commit()
     tips = _build_tips(preferences, items)
     history = payload.get("history", [])
     if not isinstance(history, list):
