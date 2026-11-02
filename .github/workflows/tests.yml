@@ -9,6 +9,7 @@ on:
     branches:
       - main
       - "redesign/**"
+      - "feature/**"
 
 jobs:
   test:
@@ -21,7 +22,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Compile Python modules
-        run: python -m compileall -q app.py database.py services.py conversation.py comparison.py tests
+        run: python -m compileall -q app.py database.py services.py conversation.py comparison.py real_catalog.py import_merchants.py tests
       - name: Check browser JavaScript syntax
         run: node --check static/app.js
       - name: Run unit and HTTP tests
