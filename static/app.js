@@ -16,6 +16,8 @@
 
   let districts = [];
   let aiEnabled = false;
+  let realViewMode = "list";
+  let realRestaurantResults = [];
   let currentPage = "chat";
   let conversation = [];
   let conversationContext = {};
@@ -409,6 +411,11 @@
       ? "最近核验 " + escapeHtml(restaurant.verified_at.slice(0, 10))
       : "核验日期未记录";
     return '<article class="real-restaurant-card">' +
+      (restaurant.photo_url
+        ? '<img class="real-card-photo" loading="lazy" decoding="async" alt="' +
+          escapeHtml(restaurant.name) + '的授权店面照片" src="' +
+          escapeHtml(restaurant.photo_url) + '">'
+        : '<div class="real-card-photo-placeholder" aria-label="暂无经审核的门店照片">📷 门店照片待核验</div>') +
       '<div class="real-card-top"><span class="real-verified">✓ 已核验</span>' +
         '<span class="real-status">' + escapeHtml(statusLabels[restaurant.business_status] || statusLabels.unknown) + "</span></div>" +
       '<h3>' + escapeHtml(restaurant.name) + "</h3>" +
@@ -441,9 +448,18 @@
         '<button class="button-primary" type="submit">查找真实餐厅</button>' +
       "</form>" +
       '<div class="directory-toolbar"><span id="real-restaurant-count">正在读取已核验资料…</span>' +
-        '<span>只展示已核验记录</span></div>' +
+        '<div class="real-view-switch" role="group" aria-label="查看方式">' +
+          '<button type="button" class="soft-action is-active" data-real-view="list" aria-pressed="true">☷ 列表</button>' +
+          '<button type="button" class="soft-action" data-real-view="map" aria-pressed="false">⌖ 地图</button>' +
+        "</div></div>" +
       '<div id="real-restaurant-grid" class="real-restaurant-grid"></div>' +
-      '<p class="real-data-footnote">营业状态、价格和营业时间可能变化。页面会显示最近核验日期；到店前请通过商家官方渠道再次确认。</p>';
+      '<section id="real-map-panel" class="real-map-panel" hidden>' +
+        '<div class="real-map-top"><strong>武汉真实餐厅分布</strong>' +
+          '<span id="real-map-count">仅显示已核验、有经纬度的门店</span></div>' +
+        '<div id="real-map" class="real-map" role="region" aria-label="武汉真实餐厅地图"></div>' +
+        '<p>点击地图标记可以查看门店信息。地图只使用有来源、已核验的坐标；不对缺失位置进行猜测。</p>' +
+      "</section>" +
+      '<p class="real-data-footnote">仅展示最近两年内有来源更新记录并经人工核验的餐厅。营业状态、价格、照片和时间可能变化，请到店前再次确认。</p>';
 
     try {
       const [areaResult, summary] = await Promise.all([
@@ -489,16 +505,45 @@
     grid.innerHTML = '<div class="empty-state">正在查找已核验的真实餐厅…</div>';
     try {
       const result = await request("/api/real-restaurants?" + params.toString());
+      realRestaurantResults = result.items || [];
       const count = document.getElementById("real-restaurant-count");
       if (count) count.textContent = "找到 " + result.total + " 家已核验餐厅";
       grid.innerHTML = result.items.length
         ? result.items.map(realRestaurantCard).join("")
         : '<div class="real-empty-state"><span>🌱</span><h2>真实餐厅名录正在建立中</h2>' +
-          '<p>目前还没有符合条件且完成来源许可核验、人工核验的门店。</p>' +
+          '<p>目前还没有符合条件、资料在两年内且完成来源许可和人工核验的门店。</p>' +
           '<p>演示商家不会显示在这里。资料入库并审核通过后，会自动出现在本页。</p></div>';
+      setRealViewMode(realViewMode);
     } catch (error) {
       grid.innerHTML = '<div class="empty-state">' + escapeHtml(error.message) + "</div>";
     }
+  }
+
+  function setRealViewMode(view) {
+    realViewMode = view === "map" ? "map" : "list";
+    const panel = document.getElementById("real-map-panel");
+    const list = document.getElementById("real-restaurant-grid");
+    if (!panel || !list) return;
+    const showingMap = realViewMode === "map";
+    panel.hidden = !showingMap;
+    list.hidden = showingMap;
+    document.querySelectorAll("[data-real-view]").forEach(function (button) {
+      const selected = button.dataset.realView === realViewMode;
+      button.classList.toggle("is-active", selected);
+      button.setAttribute("aria-pressed", String(selected));
+    });
+    if (!showingMap) return;
+    const message = document.getElementById("real-map-count");
+    if (!window.NightFindWuhanMap) {
+      message.textContent = "地图功能暂时未加载，可以使用列表查看资料。";
+      return;
+    }
+    const result = window.NightFindWuhanMap.draw(
+      document.getElementById("real-map"), realRestaurantResults
+    );
+    message.textContent = result.available
+      ? "地图展示 " + result.pins + " 个有已核验坐标的门店"
+      : "地图暂不可用，可切换回列表";
   }
 
   async function showRealRestaurant(restaurantId) {
@@ -519,11 +564,20 @@
       const price = restaurant.price_per_person == null
         ? "人均价格待核实"
         : "人均约 ¥" + restaurant.price_per_person;
+      const photoGallery = (restaurant.photos || []).map(function (photo) {
+        return '<figure class="real-photo-figure"><img loading="lazy" alt="' +
+          escapeHtml(restaurant.name) + '的授权门店照片" src="' +
+          escapeHtml(photo.photo_url) + '"><figcaption>拍摄：' +
+          escapeHtml(photo.captured_at) + ' · ' +
+          escapeHtml(photo.copyright_holder) + '</figcaption></figure>';
+      }).join("");
       detail.innerHTML =
         '<span class="eyebrow">VERIFIED WUHAN RESTAURANT</span>' +
         '<h2>' + escapeHtml(restaurant.name) + "</h2>" +
         (restaurant.branch_name ? '<p class="real-branch">' + escapeHtml(restaurant.branch_name) + "</p>" : "") +
-        '<span class="real-verified">✓ 来源许可有效 · 人工核验通过</span>' +
+        '<span class="real-verified">✓ 来源许可有效 · 近两年核验通过</span>' +
+        (photoGallery ? '<div class="real-photo-gallery">' + photoGallery + '</div>' :
+          '<p class="real-no-photo">📷 暂无授权且近两年拍摄的门店照片</p>') +
         '<p class="detail-description">' + escapeHtml(restaurant.description || "暂无商家介绍。") + "</p>" +
         '<div class="detail-facts"><span>' + escapeHtml(restaurant.district) + "</span>" +
           "<span>" + escapeHtml(restaurant.cuisine || "菜系待补充") + "</span>" +
@@ -539,8 +593,9 @@
             ? " · 商家授权提交凭证"
             : ' · <a href="' + escapeHtml(restaurant.source_url) +
               '" target="_blank" rel="noopener noreferrer">查看来源凭证 ↗</a>') + "</p>" +
-        '<p class="real-source-note">最近人工核验：' +
-          escapeHtml(restaurant.verified_at || "日期未记录") +
+        '<p class="real-source-note">来源资料更新：' +
+          escapeHtml(restaurant.source_updated_at || "日期未记录") +
+          ' · 最近人工核验：' + escapeHtml(restaurant.verified_at || "日期未记录") +
           "。营业状态并非实时信息，请到店前再次确认。</p>";
       dialog.showModal();
     } catch (error) {
@@ -838,6 +893,10 @@
   }
 
   async function navigate(page) {
+    if (currentPage === "real-restaurants" && page !== "real-restaurants" &&
+        window.NightFindWuhanMap) {
+      window.NightFindWuhanMap.dispose();
+    }
     if (page === "chat") {
       renderChatPage();
     } else if (page === "merchants") {
@@ -888,6 +947,11 @@
     if (event.target.closest("[data-clear-compare]")) {
       comparisonIds.clear();
       refreshActionButtons();
+      return;
+    }
+    const realViewButton = event.target.closest("[data-real-view]");
+    if (realViewButton) {
+      setRealViewMode(realViewButton.dataset.realView);
       return;
     }
     const realMerchantButton = event.target.closest("[data-real-merchant]");
