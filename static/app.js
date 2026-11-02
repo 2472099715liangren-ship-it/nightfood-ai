@@ -507,6 +507,180 @@
     }
   }
 
+  /* Tonight List: saved items belong to the browser's visitor session. */
+  function refreshActionButtons() {
+    const savedCount = document.getElementById("saved-count");
+    if (savedCount) savedCount.textContent = savedIds.size;
+    document.querySelectorAll("[data-favorite]").forEach(function (button) {
+      const isSaved = savedIds.has(Number(button.dataset.favorite));
+      button.classList.toggle("is-active", isSaved);
+      button.setAttribute("aria-pressed", String(isSaved));
+      if (button.closest(".chat-merchant-actions")) {
+        button.textContent = isSaved ? "♥ 已留" : "♡ 留下";
+      } else {
+        button.textContent = isSaved ? "♥ 已收藏" : "♡ 今晚清单";
+      }
+    });
+    document.querySelectorAll("[data-compare]").forEach(function (button) {
+      const selected = comparisonIds.has(Number(button.dataset.compare));
+      button.classList.toggle("is-active", selected);
+      button.setAttribute("aria-pressed", String(selected));
+      button.textContent = selected ? "✓ 已选" : "⇄ 对比";
+    });
+    renderCompareTray();
+  }
+
+  async function toggleFavorite(merchantId) {
+    const active = !savedIds.has(merchantId);
+    try {
+      await request("/api/favorites", {
+        method: "POST",
+        body: { merchant_id: merchantId, active: active }
+      });
+      if (active) savedIds.add(merchantId);
+      else savedIds.delete(merchantId);
+      showToast(active ? "已经放进今晚清单啦。" : "已从今晚清单移除。");
+      if (currentPage === "saved") await renderSavedPage();
+      refreshActionButtons();
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  /* Compare selection remains in memory until the visitor clears it. */
+  async function toggleComparison(merchantId) {
+    if (comparisonIds.has(merchantId)) {
+      comparisonIds.delete(merchantId);
+      refreshActionButtons();
+      return;
+    }
+    if (comparisonIds.size >= 3) {
+      showToast("一次最多对比三家，先移除一家再选吧。");
+      return;
+    }
+    try {
+      const merchant = await request("/api/merchants/" + merchantId);
+      comparisonIds.set(merchantId, merchant.name);
+      refreshActionButtons();
+      if (comparisonIds.size === 2) {
+        showToast("已选两家，可以开始对比啦。");
+      }
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  function renderCompareTray() {
+    if (!compareTray) return;
+    if (!comparisonIds.size) {
+      compareTray.hidden = true;
+      compareTray.innerHTML = "";
+      return;
+    }
+    compareTray.hidden = false;
+    const names = Array.from(comparisonIds.values()).map(escapeHtml).join("、");
+    compareTray.innerHTML =
+      '<div class="compare-tray-summary"><b>已选 ' + comparisonIds.size +
+      ' / 3 家</b><small>' + names + "</small></div>" +
+      '<button type="button" class="soft-action" data-clear-compare="1">清空</button>' +
+      '<button type="button" class="button-primary" data-open-compare="1"' +
+        (comparisonIds.size < 2 ? " disabled" : "") + '>一起比较 →</button>';
+  }
+
+  async function showComparison() {
+    const ids = Array.from(comparisonIds.keys());
+    if (ids.length < 2 || ids.length > 3) {
+      showToast("请先选择两到三家餐厅。");
+      return;
+    }
+    try {
+      const params = new URLSearchParams({ ids: ids.join(",") });
+      const known = conversationContext.known || [];
+      if (known.includes("scene")) params.set("scene", conversationContext.scene);
+      const result = await request("/api/compare?" + params.toString());
+      const winner = result.summary.recommended_id;
+      const cols = result.items.map(function (merchant) {
+        const isTop = merchant.id === winner;
+        const highlights = merchant.highlights.map(function (label) {
+          return "<span>" + escapeHtml(label) + "</span>";
+        }).join("");
+        return '<article class="compare-column ' + (isTop ? "top" : "") + '">' +
+          '<div class="dish-emoji" aria-hidden="true">' +
+            cuisineEmoji(merchant.cuisine) + "</div>" +
+          '<h3>' + escapeHtml(merchant.name) + "</h3>" +
+          '<div class="compare-metric"><span>人均</span><b>¥' + merchant.price + "</b></div>" +
+          '<div class="compare-metric"><span>预计等位</span><b>' + merchant.wait + " 分钟</b></div>" +
+          '<div class="compare-metric"><span>菜系</span><b>' + escapeHtml(merchant.cuisine) + "</b></div>" +
+          '<div class="compare-metric"><span>商圈</span><b>' + escapeHtml(merchant.district) + "</b></div>" +
+          '<div class="compare-metric"><span>演示评分</span><b>★ ' +
+            Number(merchant.rating).toFixed(1) + "</b></div>" +
+          '<div class="compare-tags">' + highlights + "</div>" +
+          '<div class="merchant-actions">' +
+            '<button class="soft-action" type="button" data-favorite="' +
+              merchant.id + '">♡ 今晚清单</button>' +
+          "</div>" +
+        "</article>";
+      }).join("");
+      compareDetail.innerHTML =
+        '<span class="eyebrow">CHOOSE WHAT MATTERS TO YOU</span>' +
+        '<h2>这几家，怎么选？</h2>' +
+        '<p class="compare-intro">按照人均、等位和口味，把优缺点放在一起看。</p>' +
+        '<div class="compare-columns ' + (result.items.length === 2 ? "two" : "") +
+          '">' + cols + "</div>" +
+        '<div class="compare-conclusion"><strong>夜寻的比较建议</strong><p>' +
+          escapeHtml(result.summary.reason) + "</p><ul>" +
+          result.summary.details.map(function (text) {
+            return "<li>" + escapeHtml(text) + "</li>";
+          }).join("") + "</ul></div>" +
+        '<p class="compare-disclaimer">' +
+          escapeHtml(result.summary.sample_notice) + "</p>";
+      compareDialog.showModal();
+      refreshActionButtons();
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  async function renderSavedPage() {
+    setActivePage("saved");
+    app.innerHTML =
+      '<section class="page-intro"><span class="eyebrow">YOUR LITTLE DINNER LIST</span>' +
+        '<h1>把心动的店，留给今晚。</h1>' +
+        '<p>收藏会留在当前浏览器的访客会话中，换设备不会自动同步。</p></section>' +
+      '<div class="saved-hero"><div><strong>今晚不必一下子决定</strong>' +
+        '<p>先记下喜欢的几家，再挑两三家放到一起比较。</p></div>' +
+        '<span class="saved-illustration" aria-hidden="true">🌿</span></div>' +
+      '<div id="saved-content"><div class="empty-state">正在翻翻今晚的清单…</div></div>';
+
+    try {
+      const result = await request("/api/saved");
+      if (currentPage !== "saved") return;
+      const merchants = result.items || [];
+      savedIds = new Set(merchants.map(function (item) { return item.id; }));
+      const content = document.getElementById("saved-content");
+      if (merchants.length) {
+        content.innerHTML = '<div class="directory-toolbar"><span>记下了 ' +
+          merchants.length + ' 家店</span><span>可以收藏、查看或加入对比</span></div>' +
+          '<div class="saved-grid">' +
+          merchants.map(function (merchant) {
+            return merchantCard(merchant, true);
+          }).join("") + '</div>' +
+          '<div class="saved-actions"><button type="button" class="button-primary" ' +
+            'data-page="merchants">再逛逛商家小册 →</button></div>';
+      } else {
+        content.innerHTML =
+          '<div class="saved-empty"><span class="empty-icon">🍵</span>' +
+            '<h2>今晚的清单还是空的</h2>' +
+            '<p>看到喜欢的店，点一下“今晚清单”就能留在这里。</p>' +
+            '<button class="button-primary" type="button" data-page="merchants">去看看有什么好吃的 →</button>' +
+          "</div>";
+      }
+      refreshActionButtons();
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
   async function navigate(page) {
     if (page === "chat") {
       renderChatPage();
