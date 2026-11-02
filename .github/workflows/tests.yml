@@ -20,5 +20,7 @@ jobs:
           python-version: "3.12"
       - name: Compile Python modules
         run: python -m compileall -q app.py database.py services.py tests
-      - name: Run unit tests
+      - name: Check browser JavaScript syntax
+        run: node --check static/app.js
+      - name: Run unit and HTTP tests
         run: python -m unittest discover -s tests -v
