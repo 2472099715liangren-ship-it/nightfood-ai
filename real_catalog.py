@@ -253,16 +253,57 @@ def public_real_merchants(connection, district="", keyword="", limit=100, offset
         "SELECT id,name,district,address,cuisine,latitude,longitude,"
         "phone,price_per_person,opening_hours,source_name,source_url,"
         "verified_at,source_checked_at,verification_method,"
-        "CASE WHEN status='verified' THEN 'verified' ELSE 'community' END AS data_quality "
+        "CASE WHEN status='verified' THEN 'verified' ELSE 'community' END AS data_quality, "
+        "(SELECT p.id FROM real_merchant_photos AS p "
+        " WHERE p.merchant_id=real_merchants.id AND p.status='verified' "
+        " AND p.permission_confirmed=1 AND p.taken_at >= ? "
+        " AND substr(p.verified_at,1,10) >= ? ORDER BY p.id LIMIT 1) AS photo_id "
         "FROM real_merchants WHERE " + where + " ORDER BY updated_at DESC,id DESC "
-        "LIMIT ? OFFSET ?", parameters + [limit, offset],
+        "LIMIT ? OFFSET ?", parameters + [limit, offset, _fresh_cutoff(), _fresh_cutoff()],
     ).fetchall()
+    items = []
+    for row in results:
+        item = dict(row)
+        photo_id = item.pop("photo_id")
+        item["photo_url"] = "/real-photo/{}".format(photo_id) if photo_id else None
+        items.append(item)
     return {
-        "items": [dict(row) for row in results],
+        "items": items,
         "total": total,
         "notice": "OSM 社区收录不代表已人工核实；营业状态和地址请向商家确认。",
         "license": "© OpenStreetMap contributors · ODbL (www.openstreetmap.org/copyright)",
     }
+
+
+def get_public_real_merchant(connection, merchant_id):
+    """Return recent community/verified details without exposing rejected candidates."""
+    boundary = _fresh_cutoff()
+    row = connection.execute(
+        "SELECT id,name,district,address,cuisine,latitude,longitude,phone,"
+        "price_per_person,opening_hours,source_name,source_url,verified_at,"
+        "source_checked_at,"
+        "CASE WHEN status='verified' THEN 'verified' ELSE 'community' END AS data_quality "
+        "FROM real_merchants WHERE id=? AND " + _public_filter(),
+        (merchant_id, boundary, boundary),
+    ).fetchone()
+    if row is None:
+        return None
+    data = dict(row)
+    photos = connection.execute(
+        """
+        SELECT id,taken_at,copyright_holder,license_note,source_url
+        FROM real_merchant_photos
+        WHERE merchant_id=? AND status='verified' AND permission_confirmed=1
+          AND taken_at >= ? AND substr(verified_at,1,10) >= ?
+        ORDER BY id LIMIT 8
+        """,
+        (merchant_id, boundary, boundary),
+    ).fetchall()
+    data["photos"] = [
+        {**dict(photo), "photo_url": "/real-photo/{}".format(photo["id"])}
+        for photo in photos
+    ]
+    return data
 
 
 def catalog_coverage(connection):
