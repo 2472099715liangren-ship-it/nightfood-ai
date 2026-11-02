@@ -242,6 +242,27 @@ def initialize_database():
                 )
             );
 
+            CREATE TABLE IF NOT EXISTS real_restaurant_photos (
+                id INTEGER PRIMARY KEY,
+                restaurant_id INTEGER NOT NULL REFERENCES real_restaurants(id)
+                    ON DELETE CASCADE,
+                image_filename TEXT NOT NULL UNIQUE,
+                captured_at TEXT NOT NULL,
+                source_url TEXT NOT NULL,
+                copyright_holder TEXT NOT NULL,
+                license_note TEXT NOT NULL,
+                permission_confirmed INTEGER NOT NULL DEFAULT 0,
+                record_status TEXT NOT NULL DEFAULT 'pending' CHECK (
+                    record_status IN ('pending', 'verified', 'rejected')
+                ),
+                verified_by TEXT NOT NULL DEFAULT '',
+                verified_at TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_real_photos_restaurant
+                ON real_restaurant_photos(restaurant_id, record_status);
+
             CREATE TABLE IF NOT EXISTS restaurant_import_errors (
                 id INTEGER PRIMARY KEY,
                 batch_id INTEGER NOT NULL REFERENCES restaurant_import_batches(id) ON DELETE CASCADE,
