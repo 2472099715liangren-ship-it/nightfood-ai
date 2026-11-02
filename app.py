@@ -29,8 +29,10 @@ from database import (
 )
 from services import SCENES, chat
 from comparison import compare_merchants
+from restaurant_photos import public_photo_path
 from restaurant_catalog import (
     get_real_restaurant,
+    get_public_photo_file,
     list_real_restaurants,
     list_wuhan_areas,
     public_catalog_summary,
@@ -46,6 +48,7 @@ STATIC_FILES = {
     "/style.css": "style.css",
     "/experience.css": "experience.css",
     "/app.js": "app.js",
+    "/wuhan_map.js": "wuhan_map.js",
 }
 
 
@@ -105,10 +108,35 @@ class NightFindHandler(BaseHTTPRequestHandler):
             content_type += "; charset=utf-8"
         self._send_bytes(file_path.read_bytes(), content_type)
 
+    def _serve_public_restaurant_photo(self, path):
+        """Never serve private, unapproved or expired image bytes."""
+        suffix = path.removeprefix("/restaurant-photo/")
+        if not suffix.isdigit():
+            self._send_json({"error": "照片不存在"}, 404)
+            return
+        try:
+            with connect() as connection:
+                record = get_public_photo_file(connection, int(suffix))
+            if record is None:
+                self._send_json({"error": "照片不存在或授权已失效"}, 404)
+                return
+            photo_path = public_photo_path(record["image_filename"])
+            media_types = {
+                ".jpg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"
+            }
+            self._send_bytes(
+                photo_path.read_bytes(), media_types[photo_path.suffix]
+            )
+        except (OSError, ValueError):
+            self._send_json({"error": "照片暂不可用"}, 404)
+
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
 
+        if path.startswith("/restaurant-photo/"):
+            self._serve_public_restaurant_photo(path)
+            return
         if not path.startswith("/api/"):
             self._serve_static(path)
             return
