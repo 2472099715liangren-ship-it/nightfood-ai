@@ -166,6 +166,13 @@ class HttpApiTests(unittest.TestCase):
         self.assertEqual(unfiltered["total"], 1)
         listing = self.call_api("/api/real-restaurants?district=%E6%B1%9F%E5%B2%B8%E5%8C%BA")
         self.assertEqual(listing["total"], 1)
+        self.assertEqual(listing["page"], 1)
+        self.assertFalse(listing["has_more"])
+        empty_page = self.call_api(
+            "/api/real-restaurants?district=%E6%B1%9F%E5%B2%B8%E5%8C%BA&page=2&page_size=1"
+        )
+        self.assertEqual(empty_page["total"], 1)
+        self.assertEqual(empty_page["items"], [])
         self.assertEqual(listing["items"][0]["name"], "HTTP 真实餐厅测试")
         detail = self.call_api("/api/real-restaurants/" + str(listing["items"][0]["id"]))
         self.assertEqual(detail["source_name"], "HTTP 商家授权测试")
