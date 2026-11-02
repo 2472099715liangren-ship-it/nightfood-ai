@@ -10,6 +10,7 @@ import urllib.error
 import urllib.request
 
 from database import list_merchants, save_recommendation_run
+from real_catalog import public_real_merchants
 from conversation import choose_candidate_round, follow_up_suggestions, refine_preferences
 
 
@@ -407,6 +408,20 @@ def chat(connection, payload, session_id, districts):
         except (urllib.error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError):
             mode = "fallback"
 
+    # OSM data may enrich chat without inheriting fabricated demo metrics.
+    real_query = public_real_merchants(
+        connection,
+        keyword=preferences["cuisine"] if preferences["cuisine"] != "不限" else "",
+        limit=4,
+    )
+    real_places = real_query["items"]
+    if real_places:
+        reply = (
+            "已找到武汉开放地图的社区商家资料，具体位置和营业情况请打开地图来源核实。"
+            "下面提到的价格、等位和匹配度仍是模拟推荐，只用于测试。\n\n"
+            + reply
+        )
+
     return {
         "reply": reply,
         "items": visible_items[:3] if (
@@ -418,4 +433,9 @@ def chat(connection, payload, session_id, districts):
         "follow_up": follow_up,
         "mode": mode,
         "sample_data": True,
+        "real_places": real_places,
+        "real_places_notice": (
+            "以下是武汉开放地图社区收录的餐饮场所，未按商圈精确定位，"
+            "未经人工核实且不提供实时价格或等位。请查看地图来源。"
+        ),
     }

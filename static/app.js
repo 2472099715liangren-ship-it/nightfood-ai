@@ -288,7 +288,7 @@
       let extra = "";
       if (result.items && result.items.length) {
         extra += '<div class="chat-recommendations"><div class="recommendation-heading">' +
-          "<strong>我帮你挑出的几家</strong><span>" + result.total +
+          "<strong>模拟商家推荐 · 仅供测试</strong><span>" + result.total +
           " 家符合当前条件</span></div>" +
           result.items.slice(0, 3).map(function (merchant) {
             seenRecommendationIds.add(merchant.id);
@@ -302,6 +302,20 @@
                 '<button type="button" data-compare="' + merchant.id + '">⇄ 对比</button>' +
               "</div></div>";
           }).join("") + "</div>";
+      }
+      if (result.real_places && result.real_places.length) {
+        extra += '<div class="chat-recommendations"><div class="recommendation-heading">' +
+          '<strong>武汉开放地图收录</strong><span>社区资料 · 待核实</span></div>' +
+          '<p class="detail-note">' + escapeHtml(result.real_places_notice || "") + '</p>' +
+          result.real_places.slice(0, 3).map(function (place) {
+            return '<div class="chat-merchant"><div class="chat-merchant-icon">🌿</div>' +
+              '<div><b>' + escapeHtml(place.name) + '</b><small>' +
+              escapeHtml(place.district) + ' · ' + escapeHtml(place.cuisine) +
+              ' · 价格未提供</small></div><div class="chat-merchant-actions">' +
+              '<a href="' + escapeHtml(place.source_url) +
+              '" target="_blank" rel="noopener noreferrer">地图来源 ↗</a></div></div>';
+          }).join("") +
+          '<p class="real-license">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors · ODbL</a></p></div>';
       }
       if (result.follow_up && result.follow_up.actions) {
         extra += '<div class="followup-section"><p class="followup-question">' +
@@ -340,33 +354,46 @@
     }
   }
 
-  async function renderRealCatalog() {
+  async function renderRealCatalog(page) {
+    page = Math.max(0, Number(page) || 0);
     const container = document.getElementById("real-catalog-results");
     if (!container) return;
     const district = document.getElementById("real-district").value;
     const keyword = document.getElementById("real-keyword").value.trim();
-    const params = new URLSearchParams({limit: "50"});
+    const params = new URLSearchParams({limit: "50", offset: String(page * 50)});
     if (district) params.set("district", district);
     if (keyword) params.set("keyword", keyword);
-    container.innerHTML = '<p class="feature-description">正在查询已核验商家…</p>';
+    container.innerHTML = '<p class="feature-description">正在查询开放地图商家…</p>';
     try {
       const [result, coverage] = await Promise.all([
         request("/api/real-merchants?" + params.toString()),
         request("/api/real-merchants/coverage")
       ]);
       const count = document.getElementById("real-coverage-count");
-      if (count) count.textContent = "目前已核验 " + coverage.verified_total + " 家 · 覆盖武汉 " +
-        coverage.districts.filter(function (d) { return d.verified_count > 0; }).length + " 个行政区";
+      if (count) count.textContent = "社区收录 " + (coverage.community_total || 0) +
+        " 家 · 人工核验 " + coverage.verified_total + " 家";
       container.innerHTML = result.items.length ? result.items.map(function (merchant) {
+        const verified = merchant.data_quality === "verified";
         return '<article class="real-shop"><div><strong>' + escapeHtml(merchant.name) +
           '</strong><p>' + escapeHtml(merchant.district) + " · " + escapeHtml(merchant.address) +
           '</p><small>' + escapeHtml(merchant.cuisine) +
-          (merchant.price_per_person ? " · 人均约 ¥" + merchant.price_per_person : " · 价格待核实") +
-          '</small></div><div class="real-shop-meta"><span>核验于 ' +
-          escapeHtml(merchant.verified_at) + '</span><a href="' +
-          escapeHtml(merchant.source_url) + '" target="_blank" rel="noopener noreferrer">查看来源 ↗</a></div></article>';
-      }).join("") : '<div class="saved-empty"><h2>这个区域还没有已核验的资料</h2>' +
-        '<p>暂时不会用模拟餐厅填充真实商家结果。可以切换商圈或稍后再看。</p></div>';
+          (merchant.price_per_person ? " · 人均约 ¥" + merchant.price_per_person : " · 价格未提供") +
+          '</small></div><div class="real-shop-meta"><span>' +
+          (verified ? "人工核验 · " + escapeHtml(merchant.verified_at || "") : "社区地图收录 · 未核实营业状态") +
+          '</span><a href="' + escapeHtml(merchant.source_url) +
+          '" target="_blank" rel="noopener noreferrer">查看地图来源 ↗</a></div></article>';
+      }).join("") : '<div class="saved-empty"><h2>这组条件下还没有社区收录资料</h2>' +
+        '<p>暂时不会用模拟餐厅填充真实商家结果。可以切换行政区或关键词。</p></div>';
+      if (result.total > 50) {
+        container.insertAdjacentHTML("beforeend",
+          '<div class="real-pagination">' +
+          '<span>第 ' + (page + 1) + ' 页 · 共 ' + result.total + ' 家（社区收录/核验）</span>' +
+          '<button type="button" class="soft-action" data-real-page="' + (page - 1) +
+          '"' + (page === 0 ? " disabled" : "") + '>上一页</button>' +
+          '<button type="button" class="soft-action" data-real-page="' + (page + 1) +
+          '"' + ((page + 1) * 50 >= result.total ? " disabled" : "") + '>下一页</button>' +
+          '</div>');
+      }
     } catch (error) {
       container.textContent = error.message;
     }
@@ -393,13 +420,14 @@
       "</form>" +
       '<section class="real-catalog-panel"><div class="real-catalog-title"><div>' +
         '<span class="eyebrow">REAL WUHAN DIRECTORY</span><h2>武汉真实商家资料</h2>' +
-        '<p>只展示核验过、附有来源的真实商家，与下面的示例店铺严格分开。</p>' +
+        '<p>公开地图收录不代表商家仍在营业；人工核验与社区收录分别标记，和下面的模拟店铺分开。</p>' +
         '</div><span id="real-coverage-count">统计中…</span></div>' +
         '<form id="real-search" class="real-search"><input id="real-keyword" placeholder="查找真实店名或地址" maxlength="80">' +
         '<select id="real-district"><option value="">武汉全市</option>' +
         selectOptions(["江岸区","江汉区","硚口区","汉阳区","武昌区","青山区",
           "洪山区","东西湖区","蔡甸区","江夏区","黄陂区","新洲区","汉南区"], "") +
         '</select><button class="button-primary">搜索</button></form>' +
+        '<p class="real-license">公开地图资料 © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors · ODbL</a>。地址、营业和价格请在出发前核实；地图未录入不代表没有这家店。</p>' +
         '<div id="real-catalog-results"></div></section>' +
       '<div class="directory-toolbar"><span id="merchant-count">正在整理演示商家…</span>' +
         '<span>资料均为研究演示内容</span></div>' +
@@ -745,6 +773,11 @@
     const pageButton = event.target.closest("[data-page]");
     if (pageButton) {
       navigate(pageButton.dataset.page);
+      return;
+    }
+    const realPageButton = event.target.closest("[data-real-page]");
+    if (realPageButton && !realPageButton.disabled) {
+      renderRealCatalog(Number(realPageButton.dataset.realPage));
       return;
     }
     const quickButton = event.target.closest("[data-quick-prompt]");

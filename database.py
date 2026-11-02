@@ -38,7 +38,7 @@ def _add_missing_columns(connection):
             )
 
 
-def initialize_database():
+def initialize_database(*, import_snapshot=True):
     """Create tables, apply safe additive migrations, and seed demo records once."""
     with connect() as connection:
         connection.executescript(
@@ -157,6 +157,11 @@ def initialize_database():
         # Keep verified real merchants in separate tables from prototype data.
         from real_catalog import initialize_real_catalog
         initialize_real_catalog(connection)
+        # Load approved OSM snapshot only when its checksum changes.
+        # No network access occurs during normal app startup.
+        if import_snapshot:
+            from osm_sync import hydrate_osm_snapshot
+            hydrate_osm_snapshot(connection)
 
 
 def _seed_demo_data(connection):
