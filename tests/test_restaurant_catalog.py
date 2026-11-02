@@ -95,10 +95,12 @@ class RealRestaurantCatalogTests(unittest.TestCase):
                     "row_number": index, "external_id": row.get("external_id", ""),
                     "error_code": "invalid_row", "detail": str(error),
                 })
-        return import_rows(
+        result = import_rows(
             self.connection, "merchant_test", validated, errors,
             "restaurants.csv", "a" * 64, "test-operator",
         )
+        self.connection.commit()
+        return result
 
     def test_wuhan_coverage_has_thirteen_districts_and_separate_zones(self):
         with database.connect() as connection:
