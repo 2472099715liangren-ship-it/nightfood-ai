@@ -176,16 +176,12 @@ def recommend(connection, preferences, session_id):
         ):
             continue
 
-        merchant_location = connection.execute(
-            "SELECT lat, lng FROM restaurants WHERE id = ?",
-            (merchant["id"],),
-        ).fetchone()
         distance = 0.0
-        if origin[0] is not None and merchant_location["lat"] is not None:
+        if origin[0] is not None and merchant["lat"] is not None:
             distance = round(
                 math.hypot(
-                    (merchant_location["lat"] - origin[0]) * 111,
-                    (merchant_location["lng"] - origin[1]) * 96,
+                    (merchant["lat"] - origin[0]) * 111,
+                    (merchant["lng"] - origin[1]) * 96,
                 ),
                 1,
             )
