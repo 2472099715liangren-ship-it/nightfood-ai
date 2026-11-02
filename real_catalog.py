@@ -69,11 +69,19 @@ def initialize_real_catalog(connection):
                 CHECK(status IN ('pending','verified','rejected')),
             verified_at TEXT,
             reviewed_by TEXT NOT NULL DEFAULT '',
+            created_by TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         CREATE INDEX IF NOT EXISTS idx_merchant_photos
             ON real_merchant_photos(merchant_id,status);
     """)
+    photo_columns = {
+        item["name"] for item in connection.execute("PRAGMA table_info(real_merchant_photos)")
+    }
+    if "created_by" not in photo_columns:
+        connection.execute(
+            "ALTER TABLE real_merchant_photos ADD COLUMN created_by TEXT NOT NULL DEFAULT ''"
+        )
     columns = {item["name"] for item in connection.execute("PRAGMA table_info(real_merchants)")}
     if "source_checked_at" not in columns:
         connection.execute(
@@ -257,9 +265,20 @@ def public_real_merchants(connection, district="", keyword="", limit=100, offset
         "(SELECT p.id FROM real_merchant_photos AS p "
         " WHERE p.merchant_id=real_merchants.id AND p.status='verified' "
         " AND p.permission_confirmed=1 AND p.taken_at >= ? "
-        " AND substr(p.verified_at,1,10) >= ? ORDER BY p.id LIMIT 1) AS photo_id "
+        " AND substr(p.verified_at,1,10) >= ? ORDER BY p.id LIMIT 1) AS photo_id, "
+        "(SELECT p.taken_at FROM real_merchant_photos AS p "
+        " WHERE p.merchant_id=real_merchants.id AND p.status='verified' "
+        " AND p.permission_confirmed=1 AND p.taken_at >= ? "
+        " AND substr(p.verified_at,1,10) >= ? ORDER BY p.id LIMIT 1) AS photo_taken_at, "
+        "(SELECT p.copyright_holder FROM real_merchant_photos AS p "
+        " WHERE p.merchant_id=real_merchants.id AND p.status='verified' "
+        " AND p.permission_confirmed=1 AND p.taken_at >= ? "
+        " AND substr(p.verified_at,1,10) >= ? ORDER BY p.id LIMIT 1) AS photo_copyright_holder "
         "FROM real_merchants WHERE " + where + " ORDER BY updated_at DESC,id DESC "
-        "LIMIT ? OFFSET ?", [_fresh_cutoff(), _fresh_cutoff()] + parameters + [limit, offset],
+        "LIMIT ? OFFSET ?", (
+            [_fresh_cutoff(), _fresh_cutoff()] * 3
+            + parameters + [limit, offset]
+        ),
     ).fetchall()
     items = []
     for row in results:
