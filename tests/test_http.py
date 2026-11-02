@@ -152,6 +152,8 @@ class HttpApiTests(unittest.TestCase):
             self.assertEqual(len(direct_listing), 1)
             connection.commit()
 
+        unfiltered = self.call_api("/api/real-restaurants")
+        self.assertEqual(unfiltered["total"], 1)
         listing = self.call_api("/api/real-restaurants?district=%E6%B1%9F%E5%B2%B8%E5%8C%BA")
         self.assertEqual(listing["total"], 1)
         self.assertEqual(listing["items"][0]["name"], "HTTP 真实餐厅测试")
