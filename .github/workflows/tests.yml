@@ -21,7 +21,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Compile Python modules
-        run: python -m compileall -q app.py database.py services.py conversation.py comparison.py tests
+        run: python -m compileall -q app.py database.py services.py conversation.py comparison.py restaurant_catalog.py import_restaurants.py review_restaurants.py tests
       - name: Check browser JavaScript syntax
         run: node --check static/app.js
       - name: Run unit and HTTP tests
