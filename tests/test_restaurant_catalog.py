@@ -1,6 +1,7 @@
 """Tests for the permission-aware Wuhan real restaurant catalog."""
 import tempfile
 import unittest
+from datetime import date, timedelta
 from pathlib import Path
 
 import database
@@ -73,7 +74,7 @@ class RealRestaurantCatalogTests(unittest.TestCase):
             "business_status": "unknown",
             "description": "由商家授权提交的测试资料",
             "source_url": "merchant-submission:test-001",
-            "source_updated_at": "",
+            "source_updated_at": date.today().isoformat(),
         }
 
     def import_sample(self, rows):
@@ -123,8 +124,8 @@ class RealRestaurantCatalogTests(unittest.TestCase):
 
     def test_csv_preview_validates_district_and_keeps_missing_prices_null(self):
         path = self.csv_file([
-            ["a1", "餐厅甲", "", "江岸区", "", "江岸区道路 1 号", "", "", "", "", "湖北菜", "", "unknown", "", "merchant-submission:1", ""],
-            ["a2", "餐厅乙", "", "上海市", "", "上海市道路 1 号", "", "", "", "", "川菜", "60", "unknown", "", "merchant-submission:2", ""],
+            ["a1", "餐厅甲", "", "江岸区", "", "江岸区道路 1 号", "", "", "", "", "湖北菜", "", "unknown", "", "merchant-submission:1", date.today().isoformat()],
+            ["a2", "餐厅乙", "", "上海市", "", "上海市道路 1 号", "", "", "", "", "川菜", "60", "unknown", "", "merchant-submission:2", date.today().isoformat()],
         ])
         with database.connect() as connection:
             allowed = {
