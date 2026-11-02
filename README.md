@@ -56,6 +56,7 @@ nightfood-ai/
 ├── restaurant_catalog.py  # 真实餐厅来源、导入校验和人工审核
 ├── import_restaurants.py  # CSV 预览与导入命令
 ├── review_restaurants.py  # 待核验资料的审核命令
+├── manage_restaurant_sources.py # 来源许可暂停/恢复
 ├── start.sh               # 本地启动脚本
 ├── .env.example           # 本地环境配置模板
 ├── static/
@@ -137,6 +138,20 @@ python import_restaurants.py data/my_wuhan_restaurants.csv \
 
 ~~~bash
 python review_restaurants.py
+~~~
+
+查看或暂停数据来源；来源许可变化时应及时暂停公开：
+
+~~~bash
+python manage_restaurant_sources.py
+python manage_restaurant_sources.py --suspend merchant_claimed
+~~~
+
+恢复前必须重新核验权利并明确确认：
+
+~~~bash
+python manage_restaurant_sources.py --reinstate merchant_claimed \
+  --rights-confirmed --approved-by "operator"
 ~~~
 
 人工核对地址和来源后再批准：
