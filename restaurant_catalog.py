@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
+from freshness import cutoff_date, parse_recent_date
+
 
 ADMINISTRATIVE_DISTRICTS = {
     "江岸区", "江汉区", "硚口区", "汉阳区", "武昌区", "青山区",
@@ -157,11 +159,12 @@ def validate_restaurant_row(row, allowed_districts):
         raise CatalogValidationError(
             "营业状态只能是 unknown/open/closed/temporarily_closed"
         )
-    if clean["source_updated_at"]:
-        try:
-            datetime.fromisoformat(clean["source_updated_at"].replace("Z", "+00:00"))
-        except ValueError as error:
-            raise CatalogValidationError("source_updated_at 必须使用 ISO 日期时间") from error
+    try:
+        clean["source_updated_at"] = parse_recent_date(
+            clean["source_updated_at"], "来源资料更新日期"
+        )
+    except ValueError as error:
+        raise CatalogValidationError(str(error)) from error
 
     clean["latitude"] = _optional_float(row.get("latitude"), "纬度", 29.8, 31.5)
     clean["longitude"] = _optional_float(row.get("longitude"), "经度", 113.5, 115.2)
@@ -410,6 +413,10 @@ def set_review_status(connection, restaurant_ids, status, reviewed_by, note=""):
                 raise CatalogValidationError("数据来源许可已暂停，不能公开")
             if not row["name"] or not row["district"] or not row["address"] or not row["source_url"]:
                 raise CatalogValidationError("名称、行政区、门店地址和来源凭证均为必需")
+            try:
+                parse_recent_date(row["source_updated_at"], "来源资料更新日期")
+            except ValueError as error:
+                raise CatalogValidationError(str(error)) from error
         connection.execute(
             """
             UPDATE real_restaurants
@@ -427,47 +434,95 @@ def set_review_status(connection, restaurant_ids, status, reviewed_by, note=""):
     return changed
 
 
+def _photo_subquery():
+    """An image is public only when rights, human review and date are current."""
+    return """
+        SELECT p.id FROM real_restaurant_photos AS p
+        WHERE p.restaurant_id = r.id
+          AND p.permission_confirmed = 1
+          AND p.record_status = 'verified'
+          AND p.captured_at >= ?
+          AND substr(p.verified_at, 1, 10) >= ?
+        ORDER BY p.id LIMIT 1
+    """
+
+
 def list_real_restaurants(
     connection, keyword="", district="", cuisine="", max_price=None, limit=100
 ):
-    """Public listing: verified records from currently approved sources only."""
+    """Only recent, human-verified records from still-authorized sources."""
+    boundary = cutoff_date().isoformat()
     conditions = [
         "r.record_status = 'verified'",
         "s.permission_status = 'approved'",
+        "r.source_updated_at >= ?",
+        "substr(r.verified_at, 1, 10) >= ?",
     ]
-    parameters = []
+    filters = [boundary, boundary]
     if keyword:
         pattern = "%" + str(keyword).strip()[:80] + "%"
         conditions.append("(r.name LIKE ? OR r.cuisine LIKE ? OR r.address LIKE ?)")
-        parameters.extend([pattern, pattern, pattern])
+        filters.extend([pattern, pattern, pattern])
     if district:
         conditions.append("r.district = ?")
-        parameters.append(district)
+        filters.append(district)
     if cuisine:
         conditions.append("r.cuisine = ?")
-        parameters.append(cuisine)
-    if max_price not in (None, ""):
+        filters.append(cuisine)
+    if max_price is not None:
         conditions.append("(r.price_per_person IS NOT NULL AND r.price_per_person <= ?)")
-        parameters.append(max_price)
-    parameters.append(max(1, min(int(limit), 200)))
+        filters.append(max_price)
+    photo_sql = _photo_subquery()
     rows = connection.execute(
         """
         SELECT r.id, r.name, r.branch_name, r.district, r.business_area,
                r.address, r.latitude, r.longitude, r.phone, r.website,
                r.cuisine, r.price_per_person, r.business_status,
                r.description, r.source_url, r.source_updated_at, r.verified_at,
-               s.source_name
+               s.source_name,
+               (""" + photo_sql + """) AS photo_id
         FROM real_restaurants AS r
         JOIN restaurant_sources AS s ON s.id = r.source_id
         WHERE """ + " AND ".join(conditions) + """
         ORDER BY r.district, r.name LIMIT ?
         """,
-        parameters,
+        [boundary, boundary] + filters + [max(1, min(int(limit), 200))],
     ).fetchall()
-    return [dict(row) for row in rows]
+    results = []
+    for row in rows:
+        item = dict(row)
+        item["photo_url"] = (
+            "/restaurant-photo/{}".format(item["photo_id"]) if item["photo_id"] else None
+        )
+        del item["photo_id"]
+        item["is_demo"] = False
+        results.append(item)
+    return results
+
+
+def _public_photo_rows(connection, restaurant_id, boundary):
+    rows = connection.execute(
+        """
+        SELECT id, captured_at, source_url, copyright_holder, license_note
+        FROM real_restaurant_photos
+        WHERE restaurant_id = ? AND permission_confirmed = 1
+          AND record_status = 'verified'
+          AND captured_at >= ? AND substr(verified_at, 1, 10) >= ?
+        ORDER BY id LIMIT 12
+        """,
+        (restaurant_id, boundary, boundary),
+    ).fetchall()
+    return [
+        {
+            **dict(row),
+            "photo_url": "/restaurant-photo/{}".format(row["id"]),
+        }
+        for row in rows
+    ]
 
 
 def get_real_restaurant(connection, restaurant_id):
+    boundary = cutoff_date().isoformat()
     row = connection.execute(
         """
         SELECT r.*, s.source_name, s.source_homepage, s.terms_url
@@ -475,12 +530,15 @@ def get_real_restaurant(connection, restaurant_id):
         JOIN restaurant_sources AS s ON s.id = r.source_id
         WHERE r.id = ? AND r.record_status = 'verified'
           AND s.permission_status = 'approved'
+          AND r.source_updated_at >= ?
+          AND substr(r.verified_at, 1, 10) >= ?
         """,
-        (restaurant_id,),
+        (restaurant_id, boundary, boundary),
     ).fetchone()
     if row is None:
         return None
     result = dict(row)
+    result["is_demo"] = False
     result["hours"] = [
         dict(item) for item in connection.execute(
             """
@@ -501,16 +559,39 @@ def get_real_restaurant(connection, restaurant_id):
             (restaurant_id,),
         )
     ]
+    result["photos"] = _public_photo_rows(connection, restaurant_id, boundary)
     return result
 
 
+def get_public_photo_file(connection, photo_id):
+    """Never serve an image for unapproved, expired or unlicensed records."""
+    boundary = cutoff_date().isoformat()
+    return connection.execute(
+        """
+        SELECT p.image_filename FROM real_restaurant_photos AS p
+        JOIN real_restaurants AS r ON r.id = p.restaurant_id
+        JOIN restaurant_sources AS s ON s.id = r.source_id
+        WHERE p.id = ? AND p.permission_confirmed = 1
+          AND p.record_status = 'verified'
+          AND p.captured_at >= ? AND substr(p.verified_at,1,10) >= ?
+          AND r.record_status = 'verified'
+          AND r.source_updated_at >= ? AND substr(r.verified_at,1,10) >= ?
+          AND s.permission_status = 'approved'
+        """,
+        (photo_id, boundary, boundary, boundary, boundary),
+    ).fetchone()
+
+
 def public_catalog_summary(connection):
+    boundary = cutoff_date().isoformat()
     rows = connection.execute(
         """
         SELECT a.name AS district, COUNT(r.id) AS verified_count
         FROM wuhan_areas AS a
         LEFT JOIN real_restaurants AS r
           ON r.district = a.name AND r.record_status = 'verified'
+          AND r.source_updated_at >= ?
+          AND substr(r.verified_at, 1, 10) >= ?
           AND EXISTS (
               SELECT 1 FROM restaurant_sources AS s
               WHERE s.id = r.source_id AND s.permission_status = 'approved'
@@ -518,13 +599,15 @@ def public_catalog_summary(connection):
         WHERE a.area_type = 'administrative_district'
         GROUP BY a.id, a.name, a.sort_order
         ORDER BY a.sort_order
-        """
+        """,
+        (boundary, boundary),
     ).fetchall()
     total = sum(row["verified_count"] for row in rows)
     return {
         "total_verified": total,
         "districts": [dict(row) for row in rows],
-        "notice": "仅统计来源许可有效且经人工核验的真实门店；未核验资料不会出现在公开目录。",
+        "freshness_cutoff": boundary,
+        "notice": "仅展示最近两年内有来源更新记录、且人工核验的真实门店；超期或未经授权的资料自动隐藏。",
     }
 
 
