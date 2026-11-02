@@ -445,10 +445,8 @@ def _photo_subquery():
     """
 
 
-def list_real_restaurants(
-    connection, keyword="", district="", cuisine="", max_price=None, limit=100
-):
-    """Only recent, human-verified records from still-authorized sources."""
+def _real_catalog_filters(keyword="", district="", cuisine="", max_price=None):
+    """Centralize the same approved/fresh filters for counting and listing."""
     boundary = cutoff_date().isoformat()
     conditions = [
         "r.record_status = 'verified'",
@@ -456,21 +454,48 @@ def list_real_restaurants(
         "r.source_updated_at >= ?",
         "substr(r.verified_at, 1, 10) >= ?",
     ]
-    filters = [boundary, boundary]
+    params = [boundary, boundary]
     if keyword:
         pattern = "%" + str(keyword).strip()[:80] + "%"
         conditions.append("(r.name LIKE ? OR r.cuisine LIKE ? OR r.address LIKE ?)")
-        filters.extend([pattern, pattern, pattern])
+        params.extend([pattern, pattern, pattern])
     if district:
         conditions.append("r.district = ?")
-        filters.append(district)
+        params.append(district)
     if cuisine:
         conditions.append("r.cuisine = ?")
-        filters.append(cuisine)
+        params.append(cuisine)
     if max_price is not None:
-        conditions.append("(r.price_per_person IS NOT NULL AND r.price_per_person <= ?)")
-        filters.append(max_price)
-    photo_sql = _photo_subquery()
+        conditions.append("r.price_per_person IS NOT NULL AND r.price_per_person <= ?")
+        params.append(max_price)
+    return " AND ".join(conditions), params, boundary
+
+
+def count_real_restaurants(
+    connection, keyword="", district="", cuisine="", max_price=None
+):
+    """Count all matching authorized real restaurants, not just one result page."""
+    where, params, unused_boundary = _real_catalog_filters(
+        keyword, district, cuisine, max_price
+    )
+    result = connection.execute(
+        """
+        SELECT COUNT(*) FROM real_restaurants AS r
+        JOIN restaurant_sources AS s ON s.id = r.source_id
+        WHERE """ + where,
+        params,
+    ).fetchone()
+    return result[0]
+
+
+def list_real_restaurants(
+    connection, keyword="", district="", cuisine="", max_price=None,
+    limit=48, offset=0,
+):
+    """Page through real restaurants with predictable ordering and source provenance."""
+    where, params, boundary = _real_catalog_filters(
+        keyword, district, cuisine, max_price
+    )
     rows = connection.execute(
         """
         SELECT r.id, r.name, r.branch_name, r.district, r.business_area,
@@ -478,13 +503,14 @@ def list_real_restaurants(
                r.cuisine, r.price_per_person, r.business_status,
                r.description, r.source_url, r.source_updated_at, r.verified_at,
                s.source_name,
-               (""" + photo_sql + """) AS photo_id
+               (""" + _photo_subquery() + """) AS photo_id
         FROM real_restaurants AS r
         JOIN restaurant_sources AS s ON s.id = r.source_id
-        WHERE """ + " AND ".join(conditions) + """
-        ORDER BY r.district, r.name LIMIT ?
+        WHERE """ + where + """
+        ORDER BY r.district, r.name, r.id LIMIT ? OFFSET ?
         """,
-        [boundary, boundary] + filters + [max(1, min(int(limit), 200))],
+        [boundary, boundary] + params +
+        [max(1, min(int(limit), 200)), max(0, int(offset))],
     ).fetchall()
     results = []
     for row in rows:
