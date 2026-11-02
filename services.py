@@ -79,7 +79,7 @@ def parse_preferences(message, context, districts):
             break
 
     budget_match = re.search(
-        r"(?:人均|预算|每人|每位|控制在|不超过|最多)(?:在|为|约)?\s*[¥￥]?\s*(\d{1,3})",
+        r"(?:人均|预算|每人|每位|控制在)(?:在|为|约)?\s*[¥￥]?\s*(\d{1,3})",
         message,
     )
     if not budget_match:
