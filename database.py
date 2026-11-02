@@ -154,6 +154,9 @@ def initialize_database():
         _add_missing_columns(connection)
         _seed_demo_data(connection)
         _backfill_merchant_descriptions(connection)
+        # Keep verified real merchants in separate tables from prototype data.
+        from real_catalog import initialize_real_catalog
+        initialize_real_catalog(connection)
 
 
 def _seed_demo_data(connection):
