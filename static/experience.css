@@ -528,3 +528,21 @@
   .real-map-top { align-items: flex-start; flex-direction: column; }
   .real-photo-gallery { grid-template-columns: repeat(2, minmax(0,1fr)); }
 }
+
+.real-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 15px;
+  flex-wrap: wrap;
+  margin: 22px 0 8px;
+  color: #7b8f76;
+  font-size: 11px;
+}
+.real-pagination .soft-action:disabled {
+  color: #a8b6a5;
+  background: #f5f7f3;
+  border-color: #e6ece4;
+  cursor: not-allowed;
+  transform: none;
+}
