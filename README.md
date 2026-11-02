@@ -33,14 +33,16 @@ Windows 用户也可以下载 GitHub 仓库 ZIP、完整解压后双击 `启动�
 
 - 根据商圈、预算、等待时间、到店时间、口味和场景筛选推荐，包含跨午夜营业判断。
 - 公开评分组成、推荐依据和取舍；采用确定性规则评分，不冒称大模型推荐。
-- 商圈浏览、访客收藏、最多三家餐厅比较、推荐反馈、问卷及真实数据库聚合统计。
+- 商家简介与模拟菜品详情、访客评价列表和评价提交。
+- 对话式餐饮助手：识别商圈、预算、时间、等待、场景和口味，返回推荐依据与可操作建议；当前为本地规则助手，不接入在线大模型。
+- 商圈浏览、访客收藏、最多三家餐厅比较、推荐反馈、问卷及数据库聚合统计。
 - 响应式中文界面，SVG 美食与城市插画无需外部图片或字体请求。
 
 ## 数据库
 
 11 张表：`districts`、`restaurants`、`hours`、`dishes`、`sessions`、`recommendation_runs`、`recommendation_items`、`favorites`、`surveys`、`feedback`、`events`。通过外键连接、参数化 SQL 写入。浏览器随机访客会话用于收藏隔离，不是登录认证。
 
-接口：`GET /api/health`、`GET /api/catalog`、`GET /api/stats`、`GET /api/favorites`；`POST /api/recommend`、`POST /api/favorites`、`POST /api/surveys`、`POST /api/feedback`。POST 和收藏读取使用 `X-Session` 请求头。
+接口：`GET /api/health`、`GET /api/catalog`、`GET /api/stats`、`GET /api/favorites`、`GET /api/reviews`；`POST /api/recommend`、`POST /api/chat`、`POST /api/favorites`、`POST /api/surveys`、`POST /api/feedback`。POST 和收藏读取使用 `X-Session` 请求头。
 
 ## 验证
 

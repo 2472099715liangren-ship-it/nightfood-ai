@@ -30,6 +30,17 @@ class RecommendationTests(unittest.TestCase):
             p['hour']=12; self.assertEqual(app.recommend(c,p,'test')['items'],[])
     def test_impossible_budget(self):
         with app.connect() as c:self.assertEqual(app.recommend(c,{'budget':10,'district':1},'test')['items'],[])
+    def test_chat_constraints_and_help(self):
+        with app.connect() as c:
+            result=app.chat_recommend(c,{'message':'江汉路，人均 60 元，晚上 9 点，一个人吃清淡一点'},'test')
+            self.assertEqual(result['constraints']['district'],1)
+            self.assertEqual(result['constraints']['budget'],60)
+            self.assertEqual(result['constraints']['scene'],'独自用餐')
+            self.assertEqual(result['constraints']['cuisine'],'粥粉面')
+            self.assertTrue(result['tips'])
+            help_result=app.chat_recommend(c,{'message':'怎么用'},'test')
+            self.assertEqual(help_result['total'],0)
+            self.assertIn('预算',help_result['reply'])
     def test_favorites_isolated(self):
         with app.connect() as c:
             c.execute("INSERT INTO sessions(id) VALUES('other')");c.execute("INSERT INTO favorites(session_id,restaurant_id) VALUES('test',1)")
