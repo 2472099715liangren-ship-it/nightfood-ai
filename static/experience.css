@@ -260,3 +260,20 @@
     animation: none;
   }
 }
+
+/* Verified real directory: softly separated from the demonstration cards. */
+.real-catalog-panel { border-radius: 22px; padding: 22px; margin-bottom: 34px; border: 1px solid #d5e4cf; background: #f8fcf5; }
+.real-catalog-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.real-catalog-title h2 { color: #3e6047; font-size: 21px; font-weight: 600; margin: 6px 0; }
+.real-catalog-title p { color: #778975; font-size: 11px; margin: 0; }
+.real-catalog-title > span { border-radius: 24px; padding: 8px 12px; background: #e4eedf; color: #52745a; font-size: 10px; }
+.real-search { display: flex; gap: 9px; margin: 19px 0; }
+.real-search input, .real-search select { min-width: 0; border: 1px solid #d5e2ce; background: white; border-radius: 11px; padding: 10px 12px; color: #526a54; font: inherit; font-size: 12px; }
+.real-search input { flex: 1; }
+.real-shop { background: white; border: 1px solid #e3ebdf; border-radius: 15px; padding: 15px 17px; margin-top: 10px; display: flex; justify-content: space-between; gap: 18px; }
+.real-shop strong { font-size: 13px; color: #385940; }
+.real-shop p { margin: 5px 0; color: #6e806d; font-size: 11px; }
+.real-shop small { color: #98a193; font-size: 10px; }
+.real-shop-meta { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; color: #82927c; font-size: 10px; min-width: 110px; }
+.real-shop-meta a { color: #4d7957; text-decoration: underline; text-underline-offset: 3px; }
+@media(max-width:680px) { .real-catalog-panel { padding: 15px; } .real-search { flex-wrap: wrap; } .real-search input { flex-basis: 100%; } .real-search select { flex: 1; } .real-shop { flex-direction: column; } .real-shop-meta { flex-direction: row; justify-content: space-between; align-items: center; } }
