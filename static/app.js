@@ -18,6 +18,7 @@
   let aiEnabled = false;
   let realViewMode = "list";
   let realRestaurantResults = [];
+  let realCurrentPage = 1;
   let currentPage = "chat";
   let conversation = [];
   let conversationContext = {};
@@ -459,6 +460,7 @@
         '<div id="real-map" class="real-map" role="region" aria-label="武汉真实餐厅地图"></div>' +
         '<p>点击地图标记可以查看门店信息。地图只使用有来源、已核验的坐标；不对缺失位置进行猜测。</p>' +
       "</section>" +
+      '<nav id="real-pagination" class="real-pagination" aria-label="真实餐厅列表分页"></nav>' +
       '<p class="real-data-footnote">仅展示最近两年内有来源更新记录并经人工核验的餐厅。营业状态、价格、照片和时间可能变化，请到店前再次确认。</p>';
 
     try {
@@ -494,18 +496,21 @@
     }
   }
 
-  async function loadRealRestaurants(formData) {
+  async function loadRealRestaurants(formData, page = 1) {
     const params = new URLSearchParams();
     ["keyword", "district", "cuisine", "max_price"].forEach(function (key) {
       const value = String(formData.get(key) || "").trim();
       if (value) params.set(key, value);
     });
+    params.set("page", String(page));
+    params.set("page_size", "48");
     const grid = document.getElementById("real-restaurant-grid");
     if (!grid) return;
     grid.innerHTML = '<div class="empty-state">正在查找已核验的真实餐厅…</div>';
     try {
       const result = await request("/api/real-restaurants?" + params.toString());
       realRestaurantResults = result.items || [];
+      realCurrentPage = result.page;
       const count = document.getElementById("real-restaurant-count");
       if (count) count.textContent = "找到 " + result.total + " 家已核验餐厅";
       grid.innerHTML = result.items.length
@@ -513,6 +518,20 @@
         : '<div class="real-empty-state"><span>🌱</span><h2>真实餐厅名录正在建立中</h2>' +
           '<p>目前还没有符合条件、资料在两年内且完成来源许可和人工核验的门店。</p>' +
           '<p>演示商家不会显示在这里。资料入库并审核通过后，会自动出现在本页。</p></div>';
+      const nav = document.getElementById("real-pagination");
+      if (nav) {
+        const first = result.total ? (result.page - 1) * result.page_size + 1 : 0;
+        const last = Math.min(result.total, result.page * result.page_size);
+        nav.innerHTML =
+          '<button type="button" class="soft-action" data-real-page="' +
+            (result.page - 1) + '"' + (result.page <= 1 ? " disabled" : "") +
+            '>← 上一页</button>' +
+          '<span>第 ' + result.page + ' 页 · 显示 ' + first + '–' + last +
+            ' / ' + result.total + ' 家</span>' +
+          '<button type="button" class="soft-action" data-real-page="' +
+            (result.page + 1) + '"' + (!result.has_more ? " disabled" : "") +
+            '>下一页 →</button>';
+      }
       setRealViewMode(realViewMode);
     } catch (error) {
       grid.innerHTML = '<div class="empty-state">' + escapeHtml(error.message) + "</div>";
@@ -542,7 +561,7 @@
       document.getElementById("real-map"), realRestaurantResults
     );
     message.textContent = result.available
-      ? "地图展示 " + result.pins + " 个有已核验坐标的门店"
+      ? "当前页地图展示 " + result.pins + " 个已核验坐标的门店"
       : "地图暂不可用，可切换回列表";
   }
 
@@ -947,6 +966,12 @@
     if (event.target.closest("[data-clear-compare]")) {
       comparisonIds.clear();
       refreshActionButtons();
+      return;
+    }
+    const pageMove = event.target.closest("[data-real-page]");
+    if (pageMove && !pageMove.disabled) {
+      const form = document.getElementById("real-restaurant-search");
+      if (form) loadRealRestaurants(new FormData(form), Number(pageMove.dataset.realPage));
       return;
     }
     const realViewButton = event.target.closest("[data-real-view]");
