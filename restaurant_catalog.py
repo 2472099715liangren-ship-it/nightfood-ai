@@ -274,9 +274,7 @@ def import_rows(
     fields = list(RESTAURANT_FIELDS)
     columns = ", ".join(fields)
     placeholders = ", ".join("?" for _ in fields)
-    update_fields = ", ".join(
-        field + " = excluded." + field for field in fields if field != "external_id"
-    )
+    update_fields = ", ".join(field + " = ?" for field in fields)
     for row_number, clean in rows:
         existing = connection.execute(
             """
