@@ -542,9 +542,9 @@ def get_real_restaurant(connection, restaurant_id):
             """
             SELECT weekday, opens_at, closes_at, is_closed, note
             FROM real_restaurant_hours
-            WHERE restaurant_id = ? ORDER BY weekday
+            WHERE restaurant_id = ? AND source_updated_at >= ? ORDER BY weekday
             """,
-            (restaurant_id,),
+            (restaurant_id, boundary),
         )
     ]
     result["dishes"] = [
@@ -552,9 +552,10 @@ def get_real_restaurant(connection, restaurant_id):
             """
             SELECT name, price FROM real_restaurant_dishes
             WHERE restaurant_id = ? AND record_status = 'verified'
+              AND source_updated_at >= ?
             ORDER BY name
             """,
-            (restaurant_id,),
+            (restaurant_id, boundary),
         )
     ]
     result["photos"] = _public_photo_rows(connection, restaurant_id, boundary)
