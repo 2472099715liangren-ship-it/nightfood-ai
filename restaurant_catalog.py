@@ -549,7 +549,11 @@ def get_real_restaurant(connection, restaurant_id):
     boundary = cutoff_date().isoformat()
     row = connection.execute(
         """
-        SELECT r.*, s.source_name, s.source_homepage, s.terms_url
+        SELECT r.id, r.name, r.branch_name, r.district, r.business_area,
+               r.address, r.latitude, r.longitude, r.phone, r.website,
+               r.cuisine, r.price_per_person, r.business_status, r.description,
+               r.source_url, r.source_updated_at, r.verified_at,
+               s.source_name, s.source_homepage, s.terms_url
         FROM real_restaurants AS r
         JOIN restaurant_sources AS s ON s.id = r.source_id
         WHERE r.id = ? AND r.record_status = 'verified'
