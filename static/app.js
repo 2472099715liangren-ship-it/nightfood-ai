@@ -507,7 +507,9 @@
           '<span id="real-map-status">只展示近两年有核查依据的门店点位</span></div>' +
         '<div id="real-catalog-results"></div>' +
         '<div id="real-osm-map-panel" hidden><div id="real-osm-map" class="real-osm-map" role="region" aria-label="武汉真实门店分布图"></div>' +
-          '<p class="real-map-caption">地图标记只使用有效核查日期的真实坐标；地图瓦片仅供低流量预览。</p></div></section>' +
+          '<div class="real-map-legend"><span><i class="verified-dot"></i>近两年人工核验</span>' +
+          '<span><i class="community-dot"></i>近两年 OSM 社区核查，营业状态未核实</span></div>' +
+          '<p class="real-map-caption">地图只标注当前筛选页内、具有有效核查日期和坐标的门店。地图瓦片仅供低流量预览。</p></div></section>' +
       '<div class="directory-toolbar"><span id="merchant-count">正在整理演示商家…</span>' +
         '<span>资料均为研究演示内容</span></div>' +
       '<div id="merchant-grid" class="merchant-grid"></div>';
