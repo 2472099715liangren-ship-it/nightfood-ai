@@ -453,6 +453,15 @@ def suggestion_summary(connection):
 
 
 def create_feedback(connection, session_id, merchant_id, rating, comment):
+    try:
+        merchant_id = int(merchant_id)
+    except (TypeError, ValueError) as error:
+        raise ValueError("请选择有效商户") from error
+    exists = connection.execute(
+        "SELECT 1 FROM restaurants WHERE id = ?", (merchant_id,)
+    ).fetchone()
+    if exists is None:
+        raise ValueError("没有找到这家商户")
     rating = int(rating)
     if not 1 <= rating <= 5:
         raise ValueError("评分范围为 1–5")
