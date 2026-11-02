@@ -154,7 +154,7 @@
             '<input name="message" maxlength="2000" autocomplete="off" placeholder="说说你今晚的安排…" required>' +
             '<button type="submit" aria-label="发送消息">发送 <span>↗</span></button>' +
           "</form>" +
-          '<p class="privacy-note">不需要填写姓名或联系方式。当前商户资料为演示数据。</p>' +
+          '<p class="privacy-note">请勿输入姓名、电话等个人信息。配置 AI 后，对话内容会发送至所配置的模型服务。当前商户资料为演示数据。</p>' +
         "</div>" +
         '<aside class="chat-aside">' +
           '<div class="aside-note"><span class="note-icon">☀</span><h3>可以从这些开始</h3>' +
