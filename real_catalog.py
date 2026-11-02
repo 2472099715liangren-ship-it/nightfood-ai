@@ -55,6 +55,24 @@ def initialize_real_catalog(connection):
             ON real_merchants(district,status);
         CREATE INDEX IF NOT EXISTS idx_real_merchants_name
             ON real_merchants(name);
+
+        CREATE TABLE IF NOT EXISTS real_merchant_photos (
+            id INTEGER PRIMARY KEY,
+            merchant_id INTEGER NOT NULL REFERENCES real_merchants(id) ON DELETE CASCADE,
+            image_filename TEXT NOT NULL UNIQUE,
+            taken_at TEXT NOT NULL,
+            source_url TEXT NOT NULL,
+            copyright_holder TEXT NOT NULL,
+            license_note TEXT NOT NULL,
+            permission_confirmed INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pending'
+                CHECK(status IN ('pending','verified','rejected')),
+            verified_at TEXT,
+            reviewed_by TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_merchant_photos
+            ON real_merchant_photos(merchant_id,status);
     """)
     columns = {item["name"] for item in connection.execute("PRAGMA table_info(real_merchants)")}
     if "source_checked_at" not in columns:
