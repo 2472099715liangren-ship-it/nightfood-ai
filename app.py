@@ -38,6 +38,7 @@ SESSION_PATTERN = re.compile(r"^[A-Za-z0-9-]{1,80}$")
 STATIC_FILES = {
     "/": "index.html",
     "/style.css": "style.css",
+    "/experience.css": "experience.css",
     "/app.js": "app.js",
 }
 
