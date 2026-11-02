@@ -1,19 +1,459 @@
-const $=s=>document.querySelector(s);const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let sid=localStorage.getItem('night-session');if(!sid){sid=crypto.randomUUID();localStorage.setItem('night-session',sid)}
-let catalog,items=[],favorites=new Set(),compare=new Set(),scene='朋友聚会',page='discover';let constraints={district:1,budget:100,wait:40,hour:21,cuisine:'不限'};
-async function api(path,body){const r=await fetch('/api/'+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json','X-Session':sid},body:body?JSON.stringify(body):undefined});const d=await r.json();if(!r.ok)throw Error(d.error||'请求失败');return d}
-function toast(t){$('#toast').textContent=t;$('#toast').style.display='block';clearTimeout(window.toastTimer);window.toastTimer=setTimeout(()=>$('#toast').style.display='none',2800)}
-function skyline(){return `<svg class="skyline" viewBox="0 0 500 260" fill="none" aria-hidden="true"><path d="M0 230H500M0 245H500" stroke="#83956b" opacity=".4"/><path d="M22 230V170H58V230M67 230V132H99V230M111 230V151H135V230M335 230V153H364V230M380 230V120H413V230M430 230V163H465V230" stroke="#8eaa6c"/><path d="M205 230V126H282V230M196 126H292L273 112H214ZM208 106H281L265 92H222ZM216 86H272L253 71H236ZM237 70V47M225 150H266M225 174H266M225 200H266" stroke="#b8d391" stroke-width="2"/><path d="M150 230L170 86L186 230M160 148H179M164 117H176M165 85H175L170 50M303 230V101L314 69L325 101V230" stroke="#839b63"/><circle cx="386" cy="55" r="25" fill="#c4df9233"/><path d="M0 253Q100 236 200 253T500 253" stroke="#a2bd7e"/></svg>`}
-function food(r){const palettes={'烧烤':['#b26631','#e6b15e'],'小龙虾':['#b83e26','#e96e39'],'湖北菜':['#a77c3a','#ebc577'],'家常菜':['#759245','#d6ba71'],'粥粉面':['#c1ac7e','#ede0b8']};let p=palettes[r.cuisine]||palettes['湖北菜'];let bits='';for(let i=0;i<24;i++){let a=i*2.4,x=150+Math.cos(a)*(22+i*2.4),y=91+Math.sin(a)*(10+i*1.3);bits+=`<ellipse cx="${x}" cy="${y}" rx="${9+i%5}" ry="${5+i%4}" transform="rotate(${i*32} ${x} ${y})" fill="${p[i%2]}"/><path d="M${x} ${y}l9 -4" stroke="#f3db9a" opacity=".4"/>`}return `<svg viewBox="0 0 300 170" role="img" aria-label="${esc(r.cuisine)}风味插画"><defs><radialGradient id="plate${r.id}"><stop stop-color="#4b4234"/><stop offset="1" stop-color="#181a18"/></radialGradient></defs><path d="M0 0H300V170H0Z" fill="${r.color}22"/><path d="M18 0L66 170M70 0L118 170M122 0L170 170M174 0L222 170M226 0L274 170" stroke="#ffffff05" stroke-width="2"/><ellipse cx="153" cy="101" rx="103" ry="61" fill="#090b09" opacity=".5"/><ellipse cx="150" cy="91" rx="101" ry="66" fill="url(#plate${r.id})" stroke="#9e8d6540" stroke-width="4"/><ellipse cx="150" cy="91" rx="83" ry="51" fill="#372b1b"/>${bits}<path d="M113 66l17 9m34 28l18 -7m-46 23l12 -13m32 -41l14 8m-83 20l13 -5" stroke="#7caa51" stroke-width="5" stroke-linecap="round"/><path d="M250 27L218 150M262 29L230 152" stroke="#c4a176" stroke-width="4"/><circle cx="32" cy="29" r="17" fill="#233a22"/><path d="M25 31l15 -5m-10 -5l4 18" stroke="#85a362" stroke-width="3"/></svg>`}
-function options(list,value){return list.map(x=>`<option ${String(x[0])===String(value)?'selected':''} value="${esc(x[0])}">${esc(x[1])}</option>`).join('')}
-function discover(){return `<div class="hero"><div class="hero-index">WUHAN AFTER DARK · 17:00 — 04:00</div><div class="eyebrow">不止推荐美食，更读懂此刻的你</div><h1>武汉入夜，<br>为你寻一口<em>恰好的烟火。</em></h1><p>预算、距离、等待与口味，每一种需求都值得被看见。<br>用透明的推荐依据，找到适合今晚的那一餐。</p><div class="hero-tags"><span>四大典型商圈</span><span>多维情境匹配</span><span>每个推荐都有解释</span></div>${skyline()}</div><div class="intro"><div><h2>今晚，想怎么吃？</h2><p>告诉我们此刻的需求，让选择更轻松一点。</p></div><span class="mini">01 / 设置你的就餐情境</span></div><form id="filters" class="filter"><div class="filter-grid"><label><span>⌖ 所在商圈</span><select name="district">${options(catalog.districts.map(d=>[d.id,d.name]),constraints.district)}</select></label><label><span>¥ 人均预算</span><select name="budget">${options([30,50,80,100,150,200].map(n=>[n,'¥ '+n+' 以内']),constraints.budget)}</select></label><label><span>◷ 最长等待</span><select name="wait">${options([10,20,30,40,60].map(n=>[n,n+' 分钟以内']),constraints.wait)}</select></label><label><span>☾ 预计到店</span><select name="hour">${options([17,18,19,20,21,22,23,0,1,2,3].map(n=>[n,String(n).padStart(2,'0')+':00']),constraints.hour)}</select></label></div><div class="scene-row"><span>就餐场景</span>${['朋友聚会','独自用餐','出游夜宵'].map((s,i)=>`<button type="button" class="chip ${scene===s?'selected':''}" data-scene="${s}">${['♧','◉','✧'][i]} ${s}</button>`).join('')}<select name="cuisine" aria-label="口味偏好" style="width:115px;font-size:11px;padding:8px">${options(['不限','烧烤','小龙虾','湖北菜','家常菜','粥粉面'].map(s=>[s,s==='不限'?'不限口味':s]),constraints.cuisine)}</select><button class="primary" type="submit">寻找今晚的好味 →</button></div></form><p class="notice">ⓘ 研究演示：24 家虚构商户及其价格、评分、等位和营业时间均为模拟数据。距离以商圈中心估算，不代表真实路线或实时营业状态。</p><div class="results-head"><h2>为此刻的你推荐 <small id="resultCount"></small></h2><select id="sort" aria-label="推荐排序"><option value="score">综合匹配优先</option><option value="price">人均价格优先</option><option value="distance">距离优先</option></select></div><div id="results" class="cards"></div><div id="compareArea"></div><div class="research-banner"><div><h3>让推荐更透明，也让研究更进一步。</h3><p>花一分钟分享你的决策体验，帮助我们理解夜间餐饮选择。</p></div><button class="chip" data-goto="research">参与研究问卷 ↗</button></div>`}
-function card(r){return `<article class="card"><div class="food">${food(r)}<span class="food-label">${r.score?'✦ 情境匹配推荐':'⌖ '+esc(r.district)}</span><button class="heart ${favorites.has(r.id)?'saved':''}" data-fav="${r.id}" aria-label="${favorites.has(r.id)?'取消收藏':'收藏'}">${favorites.has(r.id)?'♥':'♡'}</button></div><div class="card-body"><div class="card-title"><h3>${esc(r.name.split(' · ')[0])}</h3><span class="rating">★ ${r.rating.toFixed(1)}</span></div><div class="meta"><span>${esc(r.district)}</span><span>${esc(r.cuisine)}</span><span>¥${r.price}/人</span><span>等位 ${r.wait} 分钟</span></div><div class="taglist">${r.tags.map(t=>`<span>${esc(t)}</span>`).join('')}<span>营业至 ${r.closes-24}:00</span></div><div class="match"><div>${r.score?`<b>${r.score}</b> <small>情境匹配分 / 100</small>`:`<small>${r.dishes.length} 道演示菜品</small>`}</div><button class="text-btn" data-detail="${r.id}">${r.score?'为什么推荐':'查看详情'} ↗</button></div><label class="compare-check"><input type="checkbox" data-compare="${r.id}" ${compare.has(r.id)?'checked':''}>加入比较</label></div></article>`}
-function renderCards(){let list=page==='favorites'?catalog.restaurants.filter(r=>favorites.has(r.id)):items;$('#results').innerHTML=list.length?list.map(card).join(''):'<div class="empty">暂无符合条件的商户。试试提高预算、延长等待时间，或收藏感兴趣的餐厅。</div>';if($('#resultCount'))$('#resultCount').textContent=`${list.length} 个可行选择 · 先筛选约束，再计算匹配`;renderCompare()}
-function renderCompare(){const el=$('#compareArea');if(!el)return;const list=[...compare].map(id=>catalog.restaurants.find(r=>r.id===id));el.innerHTML=list.length?`<div class="panel"><h2>选择对比 <small class="mini">最多 3 家</small></h2><div style="overflow:auto"><table class="compare-table"><tr><th>比较维度</th>${list.map(r=>`<th>${esc(r.name)}</th>`).join('')}</tr>${[['人均预算',r=>'¥'+r.price],['预计等待',r=>r.wait+' 分钟'],['商圈',r=>esc(r.district)],['营业截止',r=>'次日 '+(r.closes-24)+':00'],['适用场景',r=>r.tags.map(esc).join(' / ')]].map(([title,fn])=>`<tr><td>${title}</td>${list.map(r=>`<td>${fn(r)}</td>`).join('')}</tr>`).join('')}</table></div></div>`:''}
-async function search(){const button=$('#filters button[type=submit]');if(button){button.disabled=true;button.textContent='正在匹配…'}try{const result=await api('recommend',{...constraints,scene});items=result.items;renderCards()}catch(e){toast(e.message)}finally{if(button){button.disabled=false;button.textContent='寻找今晚的好味 →'}}}
-async function navigate(next){page=next;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===page));$('#crumb').textContent={discover:'发现好味',districts:'商圈漫游',favorites:'我的收藏',research:'研究观察'}[page];if(page==='discover'){ $('#page').innerHTML=discover();if(!items.length)await search();else renderCards();$('#filters').onsubmit=async e=>{e.preventDefault();constraints=Object.fromEntries(new FormData(e.target));await search()};$('#sort').onchange=e=>{items.sort((a,b)=>e.target.value==='score'?b.score-a.score:a[e.target.value]-b[e.target.value]);renderCards()}}else if(page==='districts'){$('#page').innerHTML=`<div class="eyebrow">THE CITY AFTER SUNSET</div><h1 class="page-heading">沿着烟火，漫游武汉。</h1><p class="page-sub">以四个典型商圈，探索不同夜间消费情境。以下均为研究演示场景。</p><div class="district-grid">${catalog.districts.map((d,i)=>`<article class="district-card"><div class="number">0${i+1} ↗</div><h3>${esc(d.name)}</h3><p>${esc(d.description)}</p><p>6 家演示餐厅 · 多种口味 · 夜间营业</p><button class="chip" data-district="${d.id}">探索这个商圈 →</button></article>`).join('')}</div>`}else if(page==='favorites'){$('#page').innerHTML='<div class="eyebrow">YOUR NIGHT COLLECTION</div><h1 class="page-heading">把想吃的，留给下一个夜晚。</h1><p class="page-sub">收藏保存在当前浏览器的访客会话中，换设备不会同步。</p><div id="results" class="cards" style="margin-top:25px"></div><div id="compareArea"></div>';renderCards()}else await research()}
-async function research(){try{const {counts:c,scenes,tables}=await api('stats');$('#page').innerHTML=`<div class="eyebrow">RESEARCH OBSERVATORY</div><h1 class="page-heading">理解选择，比给出答案更重要。</h1><p class="page-sub">夜间经济背景下城市餐饮消费决策机制与可解释 AI 推荐优化研究 · 武汉场景原型</p><div class="stats">${[[c.restaurants,'演示商户 / 家'],[c.recommendation_runs,'实际推荐请求 / 次'],[c.surveys,'已提交问卷 / 份'],[c.trust??'—','解释信任均分 / 5']].map(([n,t])=>`<div class="stat"><b>${n}</b><span>${t}</span></div>`).join('')}</div><div class="panel"><h2>从情境约束，到透明推荐</h2><p>01 识别预算、时间、商圈与偏好 → 02 排除不可行选项 → 03 对可行商户评分 → 04 展示推荐依据与取舍 → 05 收集使用反馈。</p><p>评分权重：预算 25 分、空间可达 25 分、等待时间 20 分、场景偏好 20 分、商户评分 10 分。本原型采用规则评分，尚未接入大模型或真实商户数据。推荐有效性、信任度和决策效率仍需通过正式研究检验。</p><p>数据存储：${tables} 张关联表，${c.dishes} 条演示菜品、${c.favorites} 条收藏、${c.feedback} 条反馈。统计来自当前数据库，不代表真实市场或研究结论。</p>${scenes.length?scenes.map(s=>`<div class="bar-row"><span>${esc(s.scene)}</span><div class="bar"><i style="width:${s.count/Math.max(1,c.surveys)*100}%"></i></div><span>${s.count} 份</span></div>`).join(''):'<p>尚无问卷样本，期待你的第一份体验反馈。</p>'}</div><form id="survey" class="panel"><h2>一分钟体验问卷</h2><p>自愿参与，无需填写姓名或联系方式。请勿提交敏感个人信息；内容将保存在本演示数据库，用于原型体验分析，并非正式研究招募。</p><div class="survey-grid"><label><span>你最常见的夜间就餐场景</span><select name="scene">${options(['朋友聚会','独自用餐','出游夜宵'].map(s=>[s,s]))}</select></label><label><span>你最优先考虑什么？</span><select name="priority">${options(['预算','距离','等待','口味'].map(s=>[s,s]))}</select></label><label><span>推荐解释是否让你更信任结果？</span><select name="trust" required><option value="">请选择</option>${options([1,2,3,4,5].map(n=>[n,n+' / 5 · '+['完全不同意','不太同意','一般','比较同意','完全同意'][n-1]]))}</select></label><label><span>你愿意再次使用此类工具吗？</span><select name="willingness" required><option value="">请选择</option>${options([1,2,3,4,5].map(n=>[n,n+' / 5 · '+['非常不愿意','不太愿意','一般','比较愿意','非常愿意'][n-1]]))}</select></label></div><label><span>还有哪些需求没有被照顾到？（选填）</span><textarea name="comment" maxlength="2000" placeholder="例如：希望了解停车条件、过敏原或最后点单时间…"></textarea></label><label class="compare-check" style="margin:18px 0"><input type="checkbox" required>我已了解以上说明，自愿提交体验反馈。</label><button class="primary">提交体验问卷 →</button></form><div class="panel"><h2>研究依据</h2><p>本项目依据上传的研究背景文档构建，关注时间、空间、预算与偏好之间的权衡，以及解释对信任和使用意愿的影响。文档未提供实验结果，因此此处不展示虚构的研究成效。</p><p>政策参考：<a style="color:var(--lime)" href="https://www.hlj.gov.cn/hljzqc/c100116/202403/c00_31721996.shtml" target="_blank" rel="noopener noreferrer">《关于促进餐饮业高质量发展的指导意见》</a>（2024）；<a style="color:var(--lime)" href="https://www.moj.gov.cn/pub/sfbgw/gwxw/ttxw/202503/t20250317_515903.html" target="_blank" rel="noopener noreferrer">《提振消费专项行动方案》</a>（2025）。</p></div>`;$('#survey').onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector('button');b.disabled=true;try{await api('surveys',Object.fromEntries(new FormData(e.target)));toast('问卷已保存，感谢分享你的体验');await research()}catch(err){toast(err.message);b.disabled=false}}}catch(e){toast(e.message)}}
-function detail(id){const r=items.find(x=>x.id===id)||catalog.restaurants.find(x=>x.id===id);$('#detailBody').innerHTML=`<div class="eyebrow">WHY THIS PLACE</div><h2 class="detail-title">${esc(r.name)}</h2>${r.parts?`<div class="explain">${r.reasons.map(esc).join('<br>')}</div><h3 style="font-size:14px;margin-top:22px">匹配分如何计算？ <span style="color:var(--lime)">${r.score} / 100</span></h3>${Object.entries(r.parts).map(([k,v])=>`<div class="bar-row"><span>${k}</span><div class="bar"><i style="width:${v/({预算适配:25,空间可达:25,等待时间:20,场景偏好:20,商户评分:10}[k])*100}%"></i></div><span>${v}</span></div>`).join('')}<p class="detail-note">场景不匹配仅影响评分；超预算、超等待或非营业时段会直接排除。分数不代表满意概率，也不代表实际 AI 预测准确率。</p>`:`<div class="explain">人均 ¥${r.price} · 等位 ${r.wait} 分钟 · ${esc(r.cuisine)}<br>演示营业时段：17:00 至次日 ${r.closes-24}:00</div>`}<p class="detail-note">数据为模拟值。距离是商圈中心到商户的直线估算，不包含交通、停车和配送条件，到店前应核实营业信息。</p><h3 style="font-size:14px">演示菜单</h3><div class="detail-dishes">${r.dishes.map(d=>`<span>${esc(d.name)} ¥${d.price}</span>`).join('')}</div><form id="feedback"><label><span>这条推荐对你有帮助吗？</span><select name="rating">${options([5,4,3,2,1].map(n=>[n,n+' 分']))}</select></label><textarea name="comment" maxlength="2000" placeholder="说说你的理由（选填）" style="margin:12px 0"></textarea><button class="primary">提交推荐反馈</button></form>`;$('#detail').showModal();$('#feedback').onsubmit=async e=>{e.preventDefault();let b=e.target.querySelector('button');b.disabled=true;try{await api('feedback',{...Object.fromEntries(new FormData(e.target)),restaurant_id:id});toast('反馈已保存');$('#detail').close()}catch(err){toast(err.message);b.disabled=false}}}
-document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;try{if(b.dataset.page||b.dataset.goto)await navigate(b.dataset.page||b.dataset.goto);if(b.dataset.scene){scene=b.dataset.scene;document.querySelectorAll('[data-scene]').forEach(x=>x.classList.toggle('selected',x===b))}if(b.dataset.district){constraints.district=Number(b.dataset.district);items=[];await navigate('discover')}if(b.dataset.detail)detail(Number(b.dataset.detail));if(b.dataset.fav){let id=Number(b.dataset.fav),active=!favorites.has(id);await api('favorites',{restaurant_id:id,active});active?favorites.add(id):favorites.delete(id);$('#favCount').textContent=favorites.size;renderCards();toast(active?'已加入收藏':'已取消收藏')}}catch(err){toast(err.message)}});
-document.addEventListener('change',e=>{if(e.target.dataset.compare){let id=Number(e.target.dataset.compare);if(e.target.checked&&compare.size>=3){e.target.checked=false;return toast('最多比较 3 家餐厅')}e.target.checked?compare.add(id):compare.delete(id);renderCompare()}});
-(async()=>{try{[catalog]=await Promise.all([api('catalog')]);favorites=new Set((await api('favorites')).map(f=>f.restaurant_id));$('#favCount').textContent=favorites.size;await navigate('discover')}catch(e){$('#page').innerHTML='<div class="empty">服务暂时无法连接，请刷新重试。</div>';toast(e.message)}})();
+/* NightFind front-end.
+ * Page rendering and event handling are kept in one small, dependency-free file.
+ */
+(function () {
+  "use strict";
+
+  const app = document.getElementById("app");
+  const dialog = document.getElementById("merchant-dialog");
+  const detail = document.getElementById("merchant-detail");
+  const toastNode = document.getElementById("toast");
+  const sessionKey = "nightfind-session";
+  const sessionId = getSessionId();
+
+  let districts = [];
+  let aiEnabled = false;
+  let currentPage = "chat";
+  let conversation = [];
+  let conversationContext = {};
+  let toastTimer = null;
+
+  function getSessionId() {
+    let value = localStorage.getItem(sessionKey);
+    if (!value) {
+      value = window.crypto && crypto.randomUUID
+        ? crypto.randomUUID()
+        : "nf-" + Date.now() + "-" + Math.random().toString(36).slice(2);
+      localStorage.setItem(sessionKey, value);
+    }
+    return value;
+  }
+
+  function escapeHtml(value) {
+    return String(value == null ? "" : value).replace(/[&<>"']/g, function (char) {
+      return {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[char];
+    });
+  }
+
+  async function request(path, options) {
+    const config = options || {};
+    const headers = Object.assign(
+      { "X-Session": sessionId },
+      config.body ? { "Content-Type": "application/json" } : {},
+      config.headers || {}
+    );
+    const response = await fetch(path, {
+      method: config.method || "GET",
+      headers: headers,
+      body: config.body ? JSON.stringify(config.body) : undefined
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "请求暂时没有完成，请稍后再试。");
+    }
+    return data;
+  }
+
+  function showToast(message) {
+    toastNode.textContent = message;
+    toastNode.classList.add("visible");
+    window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(function () {
+      toastNode.classList.remove("visible");
+    }, 2600);
+  }
+
+  function setActivePage(page) {
+    currentPage = page;
+    document.querySelectorAll(".nav-link").forEach(function (button) {
+      button.classList.toggle("active", button.dataset.page === page);
+    });
+  }
+
+  function selectOptions(values, selected) {
+    return values.map(function (value) {
+      const optionValue = Array.isArray(value) ? value[0] : value;
+      const label = Array.isArray(value) ? value[1] : value;
+      return '<option value="' + escapeHtml(optionValue) + '"' +
+        (String(optionValue) === String(selected) ? " selected" : "") + ">" +
+        escapeHtml(label) + "</option>";
+    }).join("");
+  }
+
+  function cuisineEmoji(cuisine) {
+    const icons = {
+      "烧烤": "🥢",
+      "小龙虾": "🦞",
+      "湖北菜": "🥣",
+      "家常菜": "🍚",
+      "粥粉面": "🍜"
+    };
+    return icons[cuisine] || "🍃";
+  }
+
+  function merchantCard(merchant, compact) {
+    const tags = (merchant.tags || []).slice(0, 3).map(function (tag) {
+      return '<span class="tag">' + escapeHtml(tag) + "</span>";
+    }).join("");
+    const score = merchant.score
+      ? '<span class="match-score">匹配度 ' + merchant.score + '</span>'
+      : "";
+    return '<article class="merchant-card">' +
+      '<div class="merchant-art art-' + escapeHtml(merchant.cuisine) + '">' +
+        '<span class="dish-emoji">' + cuisineEmoji(merchant.cuisine) + "</span>" +
+        '<span class="art-caption">' + escapeHtml(merchant.district || "") + "</span>" +
+      "</div>" +
+      '<div class="merchant-card-body">' +
+        '<div class="merchant-card-heading"><h3>' + escapeHtml(merchant.name) + "</h3>" +
+          '<span class="rating">★ ' + Number(merchant.rating || 0).toFixed(1) + "</span></div>" +
+        '<p class="merchant-summary">' + escapeHtml(merchant.description || "这家店正在等待一段更完整的介绍。") + "</p>" +
+        '<div class="merchant-facts"><span>人均 ¥' + merchant.price + "</span>" +
+          "<span>等位约 " + merchant.wait + " 分钟</span>" +
+          (merchant.closes ? "<span>营业至 " + (merchant.closes - 24) + ":00</span>" : "") +
+        "</div>" +
+        '<div class="tag-row">' + tags + score + "</div>" +
+        '<button class="quiet-link" type="button" data-merchant="' + merchant.id + '">' +
+          (compact ? "看看这家 →" : "了解这家店 →") +
+        "</button>" +
+      "</div>" +
+    "</article>";
+  }
+
+  function renderChatPage() {
+    setActivePage("chat");
+    const modeLabel = aiEnabled ? "AI 对话已连接" : "基础建议模式";
+    app.innerHTML =
+      '<section class="welcome-row">' +
+        '<div><span class="eyebrow">A LITTLE HELP FOR TONIGHT</span>' +
+          '<h1>今晚想吃点什么？</h1>' +
+          '<p class="welcome-copy">不用想得太周全，先说说你现在的心情和打算。</p></div>' +
+        '<div class="welcome-doodle" aria-hidden="true"><span>🍃</span><i></i><b></b></div>' +
+      "</section>" +
+      '<section class="chat-layout">' +
+        '<div class="chat-card">' +
+          '<div class="chat-card-top"><div class="helper-avatar">寻</div>' +
+            '<div><strong>夜寻小帮手</strong><small>陪你一起挑，不替你做决定</small></div>' +
+            '<span class="mode-pill">' + modeLabel + "</span></div>" +
+          '<div id="chat-messages" class="chat-messages">' +
+            '<div class="message assistant"><div class="message-avatar">寻</div>' +
+              '<div class="message-content"><p>晚上好呀。你今天想吃点热乎的，还是想和朋友慢慢坐一会儿？</p>' +
+              '<p>告诉我大概在哪、预算多少，或者只说一句“想吃点清淡的”也可以。</p></div></div>' +
+          "</div>" +
+          '<div class="chat-suggestions">' +
+            '<button type="button" data-prompt="人均 50 元左右，想吃点清淡的">🥬 想吃清淡一点</button>' +
+            '<button type="button" data-prompt="江汉路附近，朋友聚会，人均 100 元以内">🧑‍🤝‍🧑 和朋友聚餐</button>' +
+            '<button type="button" data-prompt="晚上 11 点还有什么夜宵选择？">🌙 找点夜宵</button>' +
+          "</div>" +
+          '<form id="chat-form" class="chat-composer">' +
+            '<input name="message" maxlength="2000" autocomplete="off" placeholder="说说你今晚的安排…" required>' +
+            '<button type="submit" aria-label="发送消息">发送 <span>↗</span></button>' +
+          "</form>" +
+          '<p class="privacy-note">不需要填写姓名或联系方式。当前商户资料为演示数据。</p>' +
+        "</div>" +
+        '<aside class="chat-aside">' +
+          '<div class="aside-note"><span class="note-icon">☀</span><h3>可以从这些开始</h3>' +
+            '<p>位置、预算、时间、口味，想到哪说到哪。</p></div>' +
+          '<div class="aside-tip"><span>01</span><div><b>说个大概位置</b><p>比如江汉路、光谷，或你常去的片区。</p></div></div>' +
+          '<div class="aside-tip"><span>02</span><div><b>给个预算范围</b><p>人均 50 元、100 元，或者今天想省一点。</p></div></div>' +
+          '<div class="aside-tip"><span>03</span><div><b>讲讲你的心情</b><p>一个人吃、朋友聚会，或散步时来点夜宵。</p></div></div>' +
+          '<div class="small-note">' +
+            (aiEnabled
+              ? "已配置 AI 服务。推荐仍以商家数据库中的信息为准。"
+              : "现在可以使用基础智能推荐。配置服务端 AI 密钥后，可启用更自然的 AI 对话。") +
+          "</div>" +
+        "</aside>" +
+      "</section>";
+
+    document.getElementById("chat-form").addEventListener("submit", submitChat);
+    document.querySelectorAll("[data-prompt]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        const input = document.querySelector('#chat-form input[name="message"]');
+        input.value = button.dataset.prompt;
+        document.getElementById("chat-form").requestSubmit();
+      });
+    });
+  }
+
+  function appendMessage(role, text, extraHtml) {
+    const messages = document.getElementById("chat-messages");
+    const bubble = document.createElement("div");
+    bubble.className = "message " + (role === "user" ? "user" : "assistant");
+    if (role === "user") {
+      bubble.innerHTML = '<div class="message-content"><p>' + escapeHtml(text) + "</p></div>";
+    } else {
+      bubble.innerHTML =
+        '<div class="message-avatar">寻</div><div class="message-content"><p>' +
+        escapeHtml(text).replace(/\n/g, "<br>") + "</p>" +
+        (extraHtml || "") + "</div>";
+    }
+    messages.appendChild(bubble);
+    messages.scrollTop = messages.scrollHeight;
+    return bubble;
+  }
+
+  async function submitChat(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const input = form.elements.message;
+    const message = input.value.trim();
+    if (!message) return;
+
+    input.value = "";
+    appendMessage("user", message);
+    const pending = appendMessage("assistant", "我看看有哪些选择…");
+    pending.classList.add("thinking");
+
+    try {
+      const result = await request("/api/chat", {
+        method: "POST",
+        body: {
+          message: message,
+          context: conversationContext,
+          history: conversation.slice(-8)
+        }
+      });
+      pending.remove();
+      conversation.push({ role: "user", content: message });
+      conversation.push({ role: "assistant", content: result.reply });
+      conversationContext = result.constraints || {};
+
+      let extra = "";
+      if (result.items && result.items.length) {
+        extra += '<div class="chat-recommendations"><div class="recommendation-heading">' +
+          "<strong>我帮你挑出的几家</strong><span>" + result.total + " 家符合条件</span></div>" +
+          result.items.slice(0, 3).map(function (merchant) {
+            return '<div class="chat-merchant"><div class="chat-merchant-icon">' +
+              cuisineEmoji(merchant.cuisine) + "</div><div><b>" +
+              escapeHtml(merchant.name) + "</b><small>人均 ¥" + merchant.price +
+              " · 等位约 " + merchant.wait + " 分钟</small></div>" +
+              '<button type="button" data-merchant="' + merchant.id + '">看看</button></div>';
+          }).join("") + "</div>";
+      }
+      if (result.tips && result.tips.length) {
+        extra += '<div class="friendly-tips"><strong>顺手提醒</strong><ul>' +
+          result.tips.map(function (tip) {
+            return "<li>" + escapeHtml(tip) + "</li>";
+          }).join("") + "</ul></div>";
+      }
+      extra += '<span class="answer-mode">' +
+        (result.mode === "openai" ? "AI 帮你整理" : "按现有资料整理") +
+        "</span>";
+      appendMessage("assistant", result.reply, extra);
+    } catch (error) {
+      pending.remove();
+      appendMessage("assistant", error.message || "刚刚没连上，请再试一次。");
+    }
+  }
+
+  async function renderMerchantPage() {
+    setActivePage("merchants");
+    app.innerHTML =
+      '<section class="page-intro"><span class="eyebrow">THE LITTLE MERCHANT BOOK</span>' +
+        '<h1>附近的好店，慢慢认识。</h1>' +
+        '<p>先看看有什么，再挑一家合今晚胃口的。</p></section>' +
+      '<form id="merchant-search" class="merchant-search">' +
+        '<label class="search-field"><span>⌕</span><input name="keyword" placeholder="搜店名、菜系或特色"></label>' +
+        '<select name="district" aria-label="选择商圈"><option value="">全部商圈</option>' +
+          selectOptions(districts.map(function (item) { return [item.name, item.name]; }), "") +
+        "</select>" +
+        '<select name="cuisine" aria-label="选择菜系"><option value="">全部口味</option>' +
+          selectOptions(["烧烤", "小龙虾", "湖北菜", "家常菜", "粥粉面"], "") +
+        "</select>" +
+        '<select name="max_price" aria-label="人均预算"><option value="">不限预算</option>' +
+          selectOptions([[30, "人均 30 元内"], [50, "人均 50 元内"], [80, "人均 80 元内"], [100, "人均 100 元内"], [150, "人均 150 元内"]], "") +
+        "</select>" +
+        '<button class="button-primary" type="submit">找一找</button>' +
+      "</form>" +
+      '<div class="directory-toolbar"><span id="merchant-count">正在整理商家…</span>' +
+        '<span>资料均为研究演示内容</span></div>' +
+      '<div id="merchant-grid" class="merchant-grid"></div>';
+
+    document.getElementById("merchant-search").addEventListener("submit", function (event) {
+      event.preventDefault();
+      loadMerchants(new FormData(event.currentTarget));
+    });
+    await loadMerchants(new FormData(document.getElementById("merchant-search")));
+  }
+
+  async function loadMerchants(formData) {
+    const params = new URLSearchParams();
+    ["keyword", "district", "cuisine", "max_price"].forEach(function (key) {
+      const value = formData.get(key);
+      if (value) params.set(key, value);
+    });
+    const grid = document.getElementById("merchant-grid");
+    grid.innerHTML = '<div class="empty-state">正在翻翻商家小册…</div>';
+    try {
+      const result = await request("/api/merchants?" + params.toString());
+      document.getElementById("merchant-count").textContent =
+        "找到 " + result.total + " 家店";
+      grid.innerHTML = result.items.length
+        ? result.items.map(function (merchant) {
+            return merchantCard(merchant, false);
+          }).join("")
+        : '<div class="empty-state">暂时没有符合条件的店。试试换个口味或放宽预算？</div>';
+    } catch (error) {
+      grid.innerHTML = '<div class="empty-state">' + escapeHtml(error.message) + "</div>";
+    }
+  }
+
+  async function showMerchant(merchantId) {
+    try {
+      const merchant = await request("/api/merchants/" + merchantId);
+      const dishes = (merchant.dishes || []).map(function (dish) {
+        return '<div class="dish-row"><span>' + escapeHtml(dish.name) +
+          "</span><b>¥" + dish.price + "</b></div>";
+      }).join("");
+      const reviews = (merchant.reviews || []).map(function (review) {
+        return '<div class="detail-review"><span>★ ' + review.rating +
+          "</span><p>" + escapeHtml(review.comment || "没有填写文字评价") + "</p></div>";
+      }).join("");
+      detail.innerHTML =
+        '<span class="eyebrow">A PLACE TO TRY</span><h2>' + escapeHtml(merchant.name) + "</h2>" +
+        '<div class="detail-art art-' + escapeHtml(merchant.cuisine) + '">' +
+          '<span class="dish-emoji">' + cuisineEmoji(merchant.cuisine) + "</span></div>" +
+        '<p class="detail-description">' + escapeHtml(merchant.description) + "</p>" +
+        '<div class="detail-facts"><span>' + escapeHtml(merchant.district) + "</span>" +
+          "<span>" + escapeHtml(merchant.cuisine) + "</span><span>人均 ¥" + merchant.price +
+          "</span><span>等位约 " + merchant.wait + " 分钟</span></div>" +
+        '<p class="detail-address">' + escapeHtml(merchant.address_label || "商圈信息待补充") + "</p>" +
+        "<h3>菜单小记</h3>" + (dishes || '<p class="detail-description">暂时还没有菜单信息。</p>') +
+        "<h3>大家的反馈</h3>" + (reviews || '<p class="detail-description">还没有收到评价。</p>') +
+        '<form id="merchant-feedback" class="detail-feedback">' +
+          "<h3>写下你的体验</h3><input type=\"hidden\" name=\"merchant_id\" value=\"" + merchant.id + '">' +
+          '<label>给这家店打个分<select name="rating">' +
+            selectOptions([[5, "5 分 · 很喜欢"], [4, "4 分 · 不错"], [3, "3 分 · 还可以"], [2, "2 分 · 有待改进"], [1, "1 分 · 不太满意"]], 5) +
+          "</select></label>" +
+          '<textarea name="comment" maxlength="2000" placeholder="分享一点真实体验（选填）"></textarea>' +
+          '<button class="button-primary" type="submit">提交反馈</button></form>' +
+        '<p class="data-note">提示：商家介绍、菜品、价格和基础评分是演示资料，地址为示例商圈标签，不是实际门牌。</p>';
+      dialog.showModal();
+      document.getElementById("merchant-feedback").addEventListener("submit", submitMerchantFeedback);
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  async function submitMerchantFeedback(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = Object.fromEntries(new FormData(form));
+    try {
+      await request("/api/feedback", {
+        method: "POST",
+        body: {
+          merchant_id: Number(values.merchant_id),
+          rating: Number(values.rating),
+          comment: values.comment
+        }
+      });
+      showToast("谢谢你，反馈已经收到。");
+      dialog.close();
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  async function renderSuggestionsPage() {
+    setActivePage("suggestions");
+    let summary = { total: 0, categories: [] };
+    try {
+      summary = await request("/api/suggestions/summary");
+    } catch (error) {
+      // The form remains available if the optional summary request fails.
+    }
+    app.innerHTML =
+      '<section class="page-intro"><span class="eyebrow">A NOTE FROM YOU</span>' +
+        '<h1>有想法，就告诉我们。</h1>' +
+        '<p>一条小建议，也许就能让下一次选择变得更顺手。</p></section>' +
+      '<section class="suggestion-layout">' +
+        '<form id="suggestion-form" class="suggestion-form">' +
+          '<div class="form-heading"><span class="form-flower">✿</span><div><h2>写下你的想法</h2>' +
+            '<p>不用正式，想到什么就写什么。</p></div></div>' +
+          '<label>这条建议属于哪一类？<select name="category">' +
+            selectOptions(["功能建议", "商家信息", "使用体验", "其他"], "功能建议") +
+          "</select></label>" +
+          '<label>你想告诉我们什么？<textarea name="message" rows="7" maxlength="2000" required placeholder="比如：希望可以按营业时间筛选，或者补充素食选项…"></textarea></label>' +
+          '<div class="form-bottom"><span>请不要填写密码、电话等敏感个人信息。</span>' +
+            '<button class="button-primary" type="submit">提交建议 <span>↗</span></button></div>' +
+        "</form>" +
+        '<aside class="suggestion-aside"><div class="note-illustration">🌱</div>' +
+          '<h3>让夜寻慢慢长好</h3><p>我们会把大家的建议作为产品改进参考。当前是研究原型，暂不提供公开回复或处理进度。</p>' +
+          '<div class="suggestion-count"><strong>' + summary.total + "</strong><span>条建议已收到</span></div>" +
+          (summary.categories || []).map(function (item) {
+            return '<div class="category-count"><span>' + escapeHtml(item.category) +
+              '</span><b>' + item.count + "</b></div>";
+          }).join("") +
+        "</aside></section>";
+    document.getElementById("suggestion-form").addEventListener("submit", submitSuggestion);
+  }
+
+  async function submitSuggestion(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = form.querySelector("button[type=submit]");
+    button.disabled = true;
+    try {
+      const values = Object.fromEntries(new FormData(form));
+      await request("/api/suggestions", {
+        method: "POST",
+        body: values
+      });
+      showToast("收到啦，谢谢你愿意帮夜寻变得更好。");
+      await renderSuggestionsPage();
+    } catch (error) {
+      showToast(error.message);
+      button.disabled = false;
+    }
+  }
+
+  async function navigate(page) {
+    if (page === "chat") {
+      renderChatPage();
+    } else if (page === "merchants") {
+      await renderMerchantPage();
+    } else if (page === "suggestions") {
+      await renderSuggestionsPage();
+    }
+  }
+
+  document.addEventListener("click", function (event) {
+    const pageButton = event.target.closest("[data-page]");
+    if (pageButton) {
+      navigate(pageButton.dataset.page);
+      return;
+    }
+    const merchantButton = event.target.closest("[data-merchant]");
+    if (merchantButton) {
+      showMerchant(Number(merchantButton.dataset.merchant));
+    }
+  });
+
+  document.querySelector(".dialog-close").addEventListener("click", function () {
+    dialog.close();
+  });
+
+  dialog.addEventListener("click", function (event) {
+    if (event.target === dialog) dialog.close();
+  });
+
+  async function start() {
+    try {
+      const bootstrap = await request("/api/bootstrap");
+      districts = bootstrap.districts || [];
+      aiEnabled = Boolean(bootstrap.ai_enabled);
+      renderChatPage();
+    } catch (error) {
+      app.innerHTML = '<div class="empty-state">暂时连接不上夜寻服务。请确认终端里的服务仍在运行，然后刷新页面。</div>';
+      showToast(error.message);
+    }
+  }
+
+  start();
+})();
