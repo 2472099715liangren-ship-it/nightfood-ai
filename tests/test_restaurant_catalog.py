@@ -111,7 +111,7 @@ class RealRestaurantCatalogTests(unittest.TestCase):
                 "SELECT name FROM wuhan_areas WHERE area_type = 'development_zone'"
             ).fetchall()
         self.assertEqual(len(districts), 13)
-        self.assertEqual(len(zones), 4)
+        self.assertEqual(len(zones), 6)
 
     def test_source_requires_explicit_rights_confirmation(self):
         self.setUpConnection()
