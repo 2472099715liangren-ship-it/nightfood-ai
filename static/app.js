@@ -154,12 +154,14 @@
         '<div class="chat-card">' +
           '<div class="chat-card-top"><div class="helper-avatar">寻</div>' +
             '<div><strong>夜寻小帮手</strong><small>陪你一起挑，不替你做决定</small></div>' +
-            '<span class="mode-pill">' + modeLabel + "</span></div>" +
+            '<span class="mode-pill">' + modeLabel + '</span>' +
+            '<button type="button" class="reset-chat" data-reset-chat="1">重新聊</button></div>' +
           '<div id="chat-messages" class="chat-messages">' +
             '<div class="message assistant"><div class="message-avatar">寻</div>' +
               '<div class="message-content"><p>晚上好呀。你今天想吃点热乎的，还是想和朋友慢慢坐一会儿？</p>' +
               '<p>告诉我大概在哪、预算多少，或者只说一句“想吃点清淡的”也可以。</p></div></div>' +
           "</div>" +
+          '<div id="context-row" class="context-row" aria-live="polite"></div>' +
           '<div class="chat-suggestions">' +
             '<button type="button" data-prompt="人均 50 元左右，想吃点清淡的">🥬 想吃清淡一点</button>' +
             '<button type="button" data-prompt="江汉路附近，朋友聚会，人均 100 元以内">🧑‍🤝‍🧑 和朋友聚餐</button>' +
@@ -196,8 +198,10 @@
 
     // Keep the conversation when the visitor switches to another section.
     conversation.forEach(function (entry) {
-      appendMessage(entry.role, entry.content);
+      appendMessage(entry.role, entry.content, entry.extraHtml);
     });
+    renderContext();
+    refreshActionButtons();
   }
 
   function appendMessage(role, text, extraHtml) {
@@ -217,13 +221,49 @@
     return bubble;
   }
 
+  function renderContext() {
+    const row = document.getElementById("context-row");
+    if (!row) return;
+    const known = conversationContext.known || [];
+    const values = [];
+    if (known.includes("district")) values.push(conversationContext.district);
+    if (known.includes("budget")) values.push("人均 ≤ ¥" + conversationContext.budget);
+    if (known.includes("wait")) values.push("等位 ≤ " + conversationContext.wait + " 分钟");
+    if (known.includes("cuisine")) values.push(conversationContext.cuisine);
+    if (known.includes("scene")) values.push(conversationContext.scene);
+    row.innerHTML = values.length
+      ? '<span class="context-label">记住了：</span>' +
+          values.map(function (item) {
+            return '<span class="context-pill">' + escapeHtml(item) + "</span>";
+          }).join("")
+      : "";
+  }
+
+  function sendQuickPrompt(message) {
+    if (!message) return;
+    if (currentPage !== "chat") renderChatPage();
+    const form = document.getElementById("chat-form");
+    if (!form) return;
+    form.elements.message.value = message;
+    form.requestSubmit();
+  }
+
   async function submitChat(event) {
     event.preventDefault();
+    if (chatBusy) {
+      showToast("这一条正在整理，稍等一下就好。");
+      return;
+    }
     const form = event.currentTarget;
     const input = form.elements.message;
     const message = input.value.trim();
     if (!message) return;
 
+    const isAlternate = /换一批|再换几家|看看别的/.test(message);
+    if (!isAlternate) seenRecommendationIds.clear();
+    chatBusy = true;
+    const sendButton = form.querySelector('button[type="submit"]');
+    sendButton.disabled = true;
     input.value = "";
     appendMessage("user", message);
     const pending = appendMessage("assistant", "我看看有哪些选择…");
@@ -235,25 +275,42 @@
         body: {
           message: message,
           context: conversationContext,
-          history: conversation.slice(-8)
+          history: conversation.slice(-8).map(function (entry) {
+            return { role: entry.role, content: entry.content };
+          }),
+          seen_ids: Array.from(seenRecommendationIds)
         }
       });
       pending.remove();
       conversation.push({ role: "user", content: message });
-      conversation.push({ role: "assistant", content: result.reply });
       conversationContext = result.constraints || {};
 
       let extra = "";
       if (result.items && result.items.length) {
         extra += '<div class="chat-recommendations"><div class="recommendation-heading">' +
-          "<strong>我帮你挑出的几家</strong><span>" + result.total + " 家符合条件</span></div>" +
+          "<strong>我帮你挑出的几家</strong><span>" + result.total +
+          " 家符合当前条件</span></div>" +
           result.items.slice(0, 3).map(function (merchant) {
+            seenRecommendationIds.add(merchant.id);
             return '<div class="chat-merchant"><div class="chat-merchant-icon">' +
               cuisineEmoji(merchant.cuisine) + "</div><div><b>" +
               escapeHtml(merchant.name) + "</b><small>人均 ¥" + merchant.price +
               " · 等位约 " + merchant.wait + " 分钟</small></div>" +
-              '<button type="button" data-merchant="' + merchant.id + '">看看</button></div>';
+              '<div class="chat-merchant-actions">' +
+                '<button type="button" data-merchant="' + merchant.id + '">看看</button>' +
+                '<button type="button" data-favorite="' + merchant.id + '">♡ 留下</button>' +
+                '<button type="button" data-compare="' + merchant.id + '">⇄ 对比</button>' +
+              "</div></div>";
           }).join("") + "</div>";
+      }
+      if (result.follow_up && result.follow_up.actions) {
+        extra += '<div class="followup-section"><p class="followup-question">' +
+          escapeHtml(result.follow_up.question || "还想怎么挑？") + "</p>" +
+          '<div class="followup-options">' +
+          result.follow_up.actions.map(function (action) {
+            return '<button type="button" class="followup-chip" data-quick-prompt="' +
+              escapeHtml(action.message) + '">' + escapeHtml(action.label) + "</button>";
+          }).join("") + "</div></div>";
       }
       if (result.tips && result.tips.length) {
         extra += '<div class="friendly-tips"><strong>顺手提醒</strong><ul>' +
@@ -263,11 +320,23 @@
       }
       extra += '<span class="answer-mode">' +
         (result.mode === "openai" ? "AI 帮你整理" : "按现有资料整理") +
-        "</span>";
-      appendMessage("assistant", result.reply, extra);
+        " · 商家资料为演示数据</span>";
+      conversation.push({ role: "assistant", content: result.reply, extraHtml: extra });
+      if (currentPage === "chat" && document.getElementById("chat-messages")) {
+        appendMessage("assistant", result.reply, extra);
+        renderContext();
+        refreshActionButtons();
+      } else {
+        showToast("新建议已经整理好了，回到「聊聊今晚」即可查看。");
+      }
     } catch (error) {
       pending.remove();
-      appendMessage("assistant", error.message || "刚刚没连上，请再试一次。");
+      if (currentPage === "chat" && document.getElementById("chat-messages")) {
+        appendMessage("assistant", error.message || "刚刚没连上，请再试一次。");
+      }
+    } finally {
+      chatBusy = false;
+      if (sendButton.isConnected) sendButton.disabled = false;
     }
   }
 
