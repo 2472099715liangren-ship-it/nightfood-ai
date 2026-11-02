@@ -446,7 +446,7 @@ def list_real_restaurants(
     if cuisine:
         conditions.append("r.cuisine = ?")
         parameters.append(cuisine)
-    if max_price is not None:
+    if max_price not in (None, ""):
         conditions.append("(r.price_per_person IS NOT NULL AND r.price_per_person <= ?)")
         parameters.append(max_price)
     parameters.append(max(1, min(int(limit), 200)))
