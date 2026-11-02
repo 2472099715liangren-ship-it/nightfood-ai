@@ -156,6 +156,13 @@ class NightFindHandler(BaseHTTPRequestHandler):
                         cuisine=query.get("cuisine", [""])[0],
                         max_price=max_price,
                     )
+                    if os.environ.get("NIGHTFIND_DEBUG_CATALOG"):
+                        print(
+                            "[NightFind] real catalog debug db={} query={} total={}".format(
+                                connect.__globals__.get("DB_PATH"), query, len(items)
+                            ),
+                            flush=True,
+                        )
                     self._send_json({"items": items, "total": len(items)})
                     return
 
