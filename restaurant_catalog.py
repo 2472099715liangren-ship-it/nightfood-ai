@@ -139,6 +139,7 @@ def validate_restaurant_row(row, allowed_districts):
         for field in RESTAURANT_FIELDS
         if field not in {"latitude", "longitude", "price_per_person"}
     }
+    clean["business_status"] = clean["business_status"] or "unknown"
     clean["external_id"] = str(row.get("external_id", "") or "").strip()
     if not clean["name"] or len(clean["name"]) > 120:
         raise CatalogValidationError("餐厅名称不能为空且最多 120 个字符")
