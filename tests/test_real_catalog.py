@@ -1,6 +1,7 @@
 """Real-merchant catalog tests: publication gates, import, coverage and isolation."""
 import tempfile
 import unittest
+from datetime import date, timedelta
 from pathlib import Path
 
 import database
@@ -19,7 +20,8 @@ def record(external_id="partner-1", status="verified"):
         "cuisine": "湖北菜",
         "source_name": "商家授权资料",
         "source_url": "https://example.org/merchant/1",
-        "verified_at": "2026-09-12",
+        "verified_at": date.today().isoformat(),
+        "source_checked_at": date.today().isoformat(),
         "verification_method": "商家书面确认",
         "status": status,
         "price_per_person": "58",
@@ -36,6 +38,22 @@ class RealCatalogTests(unittest.TestCase):
     def tearDown(self):
         database.DB_PATH = self.old_path
         self.tmp.cleanup()
+
+    def test_expired_and_undated_records_are_hidden(self):
+        from real_catalog import _fresh_cutoff
+        checked = record("old-check")
+        cutoff = date.fromisoformat(_fresh_cutoff())
+        checked["source_checked_at"] = (cutoff - timedelta(days=1)).isoformat()
+        with database.connect() as connection:
+            with self.assertRaises(ValueError):
+                import_real_merchants(connection, [checked])
+            pending = record("undated-osm", status="pending")
+            pending["source_name"] = "OpenStreetMap"
+            pending["external_id"] = "osm:node:909"
+            pending["source_checked_at"] = ""
+            import_real_merchants(connection, [pending])
+            self.assertEqual(public_real_merchants(connection)["total"], 0)
+            self.assertEqual(catalog_coverage(connection)["candidate_total"], 1)
 
     def test_all_wuhan_districts_supported(self):
         self.assertEqual(len(WUHAN_DISTRICTS), 13)
