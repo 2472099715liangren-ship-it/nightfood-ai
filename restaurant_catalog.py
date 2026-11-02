@@ -254,7 +254,7 @@ def import_rows(
     batch_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
     inserted = updated = review = 0
 
-    for row_number, error in errors:
+    for error in errors:
         connection.execute(
             """
             INSERT INTO restaurant_import_errors (
@@ -262,7 +262,7 @@ def import_rows(
             ) VALUES (?, ?, ?, ?, ?)
             """,
             (
-                batch_id, row_number, error["external_id"],
+                batch_id, error["row_number"], error["external_id"],
                 error["error_code"], error["detail"],
             ),
         )
