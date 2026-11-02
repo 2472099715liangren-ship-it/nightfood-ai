@@ -2,6 +2,7 @@
 
 Keep SQL and persistence details in this module. Business rules live in services.py.
 """
+import json
 import os
 import sqlite3
 from pathlib import Path
@@ -305,7 +306,7 @@ def list_merchants(
     query = """
         SELECT
             r.id, r.name, r.cuisine, r.price, r.rating, r.wait,
-            r.tags, r.color, r.description, r.address_label, r.source_note,
+            r.tags, r.color, r.description, r.address_label, r.source_note, r.lat, r.lng,
             d.name AS district, h.opens, h.closes,
             COALESCE(review_stats.review_count, 0) AS review_count,
             review_stats.average_rating AS user_rating
@@ -373,7 +374,7 @@ def save_recommendation_run(connection, session_id, preferences, items):
         INSERT INTO recommendation_runs(session_id, constraints_json)
         VALUES (?, ?)
         """,
-        (session_id, __import__("json").dumps(preferences, ensure_ascii=False)),
+        (session_id, json.dumps(preferences, ensure_ascii=False)),
     )
     run_id = cursor.lastrowid
     connection.executemany(
