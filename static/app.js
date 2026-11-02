@@ -378,10 +378,12 @@
       container.innerHTML = result.items.length ? result.items.map(function (merchant) {
         const verified = merchant.data_quality === "verified";
         const photo = merchant.photo_url
-          ? '<img class="real-shop-photo" loading="lazy" alt="' +
+          ? '<figure class="real-shop-photo-figure"><img class="real-shop-photo" loading="lazy" alt="' +
             escapeHtml(merchant.name) + '经审核的店面照片" src="' +
-            escapeHtml(merchant.photo_url) + '">'
-          : '<div class="real-shop-photo-placeholder">📷 授权照片待核验</div>';
+            escapeHtml(merchant.photo_url) + '"><figcaption>拍摄于 ' +
+            escapeHtml(merchant.photo_taken_at || "日期待确认") + ' · 图片权利人：' +
+            escapeHtml(merchant.photo_copyright_holder || "未注明") + '</figcaption></figure>'
+          : '<div class="real-shop-photo-placeholder">📷 暂无已授权并审核的店面照片</div>';
         return '<article class="real-shop">' + photo +
           '<div class="real-shop-main"><strong>' + escapeHtml(merchant.name) +
           '</strong><p>' + escapeHtml(merchant.district) + " · " + escapeHtml(merchant.address) +
@@ -491,7 +493,7 @@
       "</form>" +
       '<section class="real-catalog-panel"><div class="real-catalog-title"><div>' +
         '<span class="eyebrow">REAL WUHAN DIRECTORY</span><h2>武汉真实商家资料</h2>' +
-        '<p>仅公开最近两年内有逐店核查日期的资料；834 条 OSM 候选不等于已核验营业的餐厅。下面的演示数据单独显示。</p>' +
+        '<p>仅公开最近两年内有逐店核查日期的资料；社区地图候选不等于已核验营业的餐厅。下面的演示数据单独显示。</p>' +
         '</div><span id="real-coverage-count">统计中…</span></div>' +
         '<form id="real-search" class="real-search"><input id="real-keyword" placeholder="查找真实店名或地址" maxlength="80">' +
         '<select id="real-district"><option value="">武汉全市</option>' +
