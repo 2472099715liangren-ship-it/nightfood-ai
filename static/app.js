@@ -303,6 +303,20 @@
               "</div></div>";
           }).join("") + "</div>";
       }
+      if (result.real_places && result.real_places.length) {
+        extra += '<div class="chat-recommendations"><div class="recommendation-heading">' +
+          '<strong>武汉开放地图收录</strong><span>社区资料 · 待核实</span></div>' +
+          '<p class="detail-note">' + escapeHtml(result.real_places_notice || "") + '</p>' +
+          result.real_places.slice(0, 3).map(function (place) {
+            return '<div class="chat-merchant"><div class="chat-merchant-icon">🌿</div>' +
+              '<div><b>' + escapeHtml(place.name) + '</b><small>' +
+              escapeHtml(place.district) + ' · ' + escapeHtml(place.cuisine) +
+              ' · 价格未提供</small></div><div class="chat-merchant-actions">' +
+              '<a href="' + escapeHtml(place.source_url) +
+              '" target="_blank" rel="noopener noreferrer">地图来源 ↗</a></div></div>';
+          }).join("") +
+          '<p class="real-license">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors · ODbL</a></p></div>';
+      }
       if (result.follow_up && result.follow_up.actions) {
         extra += '<div class="followup-section"><p class="followup-question">' +
           escapeHtml(result.follow_up.question || "还想怎么挑？") + "</p>" +
