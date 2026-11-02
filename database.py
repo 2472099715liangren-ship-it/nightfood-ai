@@ -390,8 +390,10 @@ def _seed_wuhan_areas(connection):
         ("汉南区", "administrative_district", 130),
         ("东湖高新区", "development_zone", 210),
         ("武汉经开区", "development_zone", 220),
-        ("长江新区", "development_zone", 230),
-        ("东湖风景区", "development_zone", 240),
+        ("临空港经济技术开发区", "development_zone", 230),
+        ("长江新区", "development_zone", 240),
+        ("武汉化学工业区", "development_zone", 250),
+        ("东湖风景区", "development_zone", 260),
     ]
     connection.executemany(
         """
