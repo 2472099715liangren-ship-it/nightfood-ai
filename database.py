@@ -227,6 +227,7 @@ def initialize_database():
                 closes_at TEXT NOT NULL DEFAULT '',
                 is_closed INTEGER NOT NULL DEFAULT 0,
                 note TEXT NOT NULL DEFAULT '',
+                source_updated_at TEXT,
                 PRIMARY KEY(restaurant_id, weekday)
             );
 
@@ -305,6 +306,16 @@ def initialize_database():
             """
         )
         _add_missing_columns(connection)
+        # Add source-level freshness for any pilot database created before this change.
+        hour_columns = {
+            row["name"] for row in connection.execute(
+                "PRAGMA table_info(real_restaurant_hours)"
+            )
+        }
+        if "source_updated_at" not in hour_columns:
+            connection.execute(
+                "ALTER TABLE real_restaurant_hours ADD COLUMN source_updated_at TEXT"
+            )
         _seed_demo_data(connection)
         _seed_wuhan_areas(connection)
         _backfill_merchant_descriptions(connection)
