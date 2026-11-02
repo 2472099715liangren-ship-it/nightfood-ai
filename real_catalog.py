@@ -16,8 +16,9 @@ from database import connect
 WUHAN_DISTRICTS = (
     "江岸区", "江汉区", "硚口区", "汉阳区", "武昌区", "青山区",
     "洪山区", "东西湖区", "蔡甸区", "江夏区", "黄陂区", "新洲区",
-    "汉南区", "待确认区县",
+    "汉南区",
 )
+UNKNOWN_DISTRICT = "待确认区县"
 VALID_STATUSES = ("draft", "pending", "verified", "rejected")
 REQUIRED_COLUMNS = (
     "external_id", "name", "district", "address", "cuisine",
@@ -67,7 +68,7 @@ def _validate(record):
     for key in ("external_id", "name", "district", "address", "cuisine", "source_name", "source_url"):
         if not item[key]:
             raise ValueError("缺少必填字段：" + key)
-    if item["district"] not in WUHAN_DISTRICTS:
+    if item["district"] not in WUHAN_DISTRICTS and item["district"] != UNKNOWN_DISTRICT:
         raise ValueError("行政区不属于武汉市：" + item["district"])
     if item["district"] == "待确认区县" and item["source_name"] != "OpenStreetMap":
         raise ValueError("待确认区县仅允许用于开放地图导入")
