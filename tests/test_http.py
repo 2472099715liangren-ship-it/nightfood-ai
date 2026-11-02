@@ -150,6 +150,7 @@ class HttpApiTests(unittest.TestCase):
             from restaurant_catalog import list_real_restaurants
             direct_listing = list_real_restaurants(connection, district="江岸区")
             self.assertEqual(len(direct_listing), 1)
+            connection.commit()
 
         listing = self.call_api("/api/real-restaurants?district=%E6%B1%9F%E5%B2%B8%E5%8C%BA")
         self.assertEqual(listing["total"], 1)
