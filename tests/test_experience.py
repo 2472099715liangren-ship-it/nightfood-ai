@@ -58,6 +58,12 @@ class ExperienceTests(unittest.TestCase):
         self.assertEqual(third["constraints"]["budget"], 80)
         self.assertEqual(third["constraints"]["scene"], "朋友聚会")
 
+    def test_waiting_minutes_do_not_become_budget(self):
+        result = self.ask("江汉路，等位最多 20 分钟")
+        self.assertEqual(result["constraints"]["wait"], 20)
+        self.assertEqual(result["constraints"]["budget"], 100)
+        self.assertNotIn("budget", result["constraints"]["known"])
+
     def test_short_wait_followup_updates_existing_preference(self):
         first = self.ask("江汉路，人均 100 元，等位最多 40 分钟")
         next_turn = self.ask("少等一会", first["constraints"])
