@@ -1,5 +1,6 @@
 import json
 import os
+from datetime import date
 import tempfile
 import threading
 import unittest
@@ -97,6 +98,160 @@ class HttpApiTests(unittest.TestCase):
         updated_merchant = self.call_api("/api/merchants/1")
         self.assertEqual(updated_merchant["reviews"][0]["rating"], 5)
 
+
+    def test_real_catalog_api_keeps_demo_data_separate(self):
+        areas = self.call_api("/api/real-areas")
+        districts = [item for item in areas["items"]
+                     if item["area_type"] == "administrative_district"]
+        self.assertEqual(len(districts), 13)
+        summary = self.call_api("/api/real-catalog/summary")
+        self.assertEqual(summary["total_verified"], 0)
+        self.assertEqual(self.call_api("/api/real-restaurants")["items"], [])
+
+        from restaurant_catalog import (
+            import_rows, register_source, set_review_status, validate_restaurant_row
+        )
+        row = {
+            "external_id": "http-real-1",
+            "name": "HTTP 真实餐厅测试",
+            "district": "江岸区",
+            "address": "武汉市江岸区测试路 1 号",
+            "source_url": "merchant-submission:http-test-1",
+            "business_status": "unknown",
+            "source_updated_at": date.today().isoformat(),
+        }
+        with database.connect() as connection:
+            register_source(
+                connection, "http_merchant", "HTTP 商家授权测试",
+                "merchant_submission", "", "",
+                "测试使用的商家授权记录", "test-operator", rights_confirmed=True,
+            )
+            clean = validate_restaurant_row(row, {"江岸区"})
+            result = import_rows(
+                connection, "http_merchant", [(2, clean)], [],
+                "http-test.csv", "c" * 64, "test-operator",
+            )
+            self.assertEqual(result["inserted_rows"], 1)
+            pending = connection.execute(
+                "SELECT id FROM real_restaurants WHERE external_id = 'http-real-1'"
+            ).fetchone()
+            changed = set_review_status(
+                connection, [pending["id"]], "verified", "reviewer", "HTTP integration test"
+            )
+            self.assertEqual(changed, 1)
+            stored = connection.execute(
+                "SELECT record_status, district FROM real_restaurants WHERE id = ?",
+                (pending["id"],),
+            ).fetchone()
+            self.assertEqual(stored["record_status"], "verified")
+            self.assertEqual(stored["district"], "江岸区")
+            source_status = connection.execute(
+                "SELECT permission_status FROM restaurant_sources WHERE source_code = 'http_merchant'"
+            ).fetchone()["permission_status"]
+            self.assertEqual(source_status, "approved")
+            from restaurant_catalog import list_real_restaurants
+            direct_listing = list_real_restaurants(connection, district="江岸区")
+            self.assertEqual(len(direct_listing), 1)
+            connection.commit()
+
+        from restaurant_catalog import list_real_restaurants
+        with database.connect() as verification_connection:
+            self.assertEqual(len(list_real_restaurants(verification_connection)), 1)
+        from app import connect as handler_connect
+        self.assertIs(handler_connect.__globals__, database.__dict__)
+        with handler_connect() as handler_connection:
+            self.assertEqual(len(list_real_restaurants(handler_connection)), 1)
+
+        unfiltered = self.call_api("/api/real-restaurants")
+        self.assertEqual(unfiltered["total"], 1)
+        listing = self.call_api("/api/real-restaurants?district=%E6%B1%9F%E5%B2%B8%E5%8C%BA")
+        self.assertEqual(listing["total"], 1)
+        self.assertEqual(listing["page"], 1)
+        self.assertFalse(listing["has_more"])
+        empty_page = self.call_api(
+            "/api/real-restaurants?district=%E6%B1%9F%E5%B2%B8%E5%8C%BA&page=2&page_size=1"
+        )
+        self.assertEqual(empty_page["total"], 1)
+        self.assertEqual(empty_page["items"], [])
+        self.assertEqual(listing["items"][0]["name"], "HTTP 真实餐厅测试")
+        detail = self.call_api("/api/real-restaurants/" + str(listing["items"][0]["id"]))
+        self.assertEqual(detail["source_name"], "HTTP 商家授权测试")
+        self.assertIsNone(detail["price_per_person"])
+
+    def test_public_photo_route_requires_approval_and_live_source_rights(self):
+        from unittest.mock import patch
+        import restaurant_photos
+        from restaurant_catalog import (
+            import_rows, register_source, set_review_status, validate_restaurant_row
+        )
+        from datetime import date
+
+        with database.connect() as connection:
+            register_source(
+                connection, "photo_http", "门店图片授权测试",
+                "merchant_submission", "", "", "测试授权说明",
+                "test-editor", rights_confirmed=True,
+            )
+            clean = validate_restaurant_row(
+                {
+                    "external_id": "photo-http-1",
+                    "name": "HTTP 图片测试门店",
+                    "district": "江岸区",
+                    "address": "武汉市江岸区测试路 6 号",
+                    "source_url": "merchant-submission:http-photo-1",
+                    "source_updated_at": date.today().isoformat(),
+                    "business_status": "unknown",
+                }, {"江岸区"},
+            )
+            import_rows(
+                connection, "photo_http", [(2, clean)], [],
+                "photo-http.csv", "f" * 64, "editor",
+            )
+            identifier = connection.execute(
+                "SELECT id FROM real_restaurants WHERE external_id = 'photo-http-1'"
+            ).fetchone()["id"]
+            set_review_status(connection, [identifier], "verified", "editor")
+
+            image = Path(self.temp_dir.name) / "shop.jpg"
+            image.write_bytes(b"\xff\xd8\xff" + b"\x00" * 260 + b"\xff\xd9")
+            with patch.object(
+                restaurant_photos, "PHOTO_ROOT", Path(self.temp_dir.name) / "photos"
+            ):
+                # App imports the helper directly but calls the photo module's
+                # public_photo_path: patch both the imported function's global.
+                photo_id = restaurant_photos.add_storefront_photo(
+                    connection, identifier, image, date.today().isoformat(),
+                    "merchant-submission:photo-http-1", "门店经营者",
+                    "商家已授权展示图片", "editor", True,
+                )
+                connection.commit()
+                route = self.base_url + "/restaurant-photo/" + str(photo_id)
+                with self.assertRaises(urllib.error.HTTPError) as blocked:
+                    urllib.request.urlopen(route, timeout=3)
+                self.assertEqual(blocked.exception.code, 404)
+                restaurant_photos.review_photo(
+                    connection, photo_id, "verified", "editor"
+                )
+                connection.commit()
+                with urllib.request.urlopen(route, timeout=3) as response:
+                    self.assertEqual(response.headers["Content-Type"], "image/jpeg")
+                    self.assertGreater(len(response.read()), 128)
+                connection.execute(
+                    """
+                    UPDATE restaurant_sources SET permission_status = 'suspended'
+                    WHERE source_code = 'photo_http'
+                    """
+                )
+                connection.commit()
+                with self.assertRaises(urllib.error.HTTPError) as revoked:
+                    urllib.request.urlopen(route, timeout=3)
+                self.assertEqual(revoked.exception.code, 404)
+
+    def test_map_script_is_served_without_api_key(self):
+        with urllib.request.urlopen(self.base_url + "/wuhan_map.js") as response:
+            script = response.read().decode("utf-8")
+        self.assertIn("NightFindWuhanMap", script)
+        self.assertIn("tile.openstreetmap.org", script)
 
     def test_chat_followups_have_actionable_prompts(self):
         first = self.call_api("/api/chat", {

@@ -29,6 +29,15 @@ from database import (
 )
 from services import SCENES, chat
 from comparison import compare_merchants
+from restaurant_photos import public_photo_path
+from restaurant_catalog import (
+    count_real_restaurants,
+    get_real_restaurant,
+    get_public_photo_file,
+    list_real_restaurants,
+    list_wuhan_areas,
+    public_catalog_summary,
+)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -40,6 +49,7 @@ STATIC_FILES = {
     "/style.css": "style.css",
     "/experience.css": "experience.css",
     "/app.js": "app.js",
+    "/wuhan_map.js": "wuhan_map.js",
 }
 
 
@@ -99,10 +109,35 @@ class NightFindHandler(BaseHTTPRequestHandler):
             content_type += "; charset=utf-8"
         self._send_bytes(file_path.read_bytes(), content_type)
 
+    def _serve_public_restaurant_photo(self, path):
+        """Never serve private, unapproved or expired image bytes."""
+        suffix = path.removeprefix("/restaurant-photo/")
+        if not suffix.isdigit():
+            self._send_json({"error": "照片不存在"}, 404)
+            return
+        try:
+            with connect() as connection:
+                record = get_public_photo_file(connection, int(suffix))
+            if record is None:
+                self._send_json({"error": "照片不存在或授权已失效"}, 404)
+                return
+            photo_path = public_photo_path(record["image_filename"])
+            media_types = {
+                ".jpg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"
+            }
+            self._send_bytes(
+                photo_path.read_bytes(), media_types[photo_path.suffix]
+            )
+        except (OSError, ValueError):
+            self._send_json({"error": "照片暂不可用"}, 404)
+
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
 
+        if path.startswith("/restaurant-photo/"):
+            self._serve_public_restaurant_photo(path)
+            return
         if not path.startswith("/api/"):
             self._serve_static(path)
             return
@@ -126,9 +161,62 @@ class NightFindHandler(BaseHTTPRequestHandler):
                     )
                     return
 
+                if path == "/api/real-areas":
+                    self._send_json({"items": list_wuhan_areas(connection)})
+                    return
+
+                if path == "/api/real-catalog/summary":
+                    self._send_json(public_catalog_summary(connection))
+                    return
+
+                if path == "/api/real-restaurants":
+                    max_price = query.get("max_price", [""])[0] or None
+                    if max_price is not None:
+                        try:
+                            max_price = int(max_price)
+                        except ValueError as error:
+                            raise ValueError("人均预算必须是数字") from error
+                        if not 1 <= max_price <= 5000:
+                            raise ValueError("人均预算范围为 1–5000 元")
+                    try:
+                        page = int(query.get("page", ["1"])[0])
+                        page_size = int(query.get("page_size", ["48"])[0])
+                    except ValueError as error:
+                        raise ValueError("分页参数必须为整数") from error
+                    if not 1 <= page <= 100000 or not 1 <= page_size <= 100:
+                        raise ValueError("分页参数超出范围")
+                    filters = {
+                        "keyword": query.get("keyword", [""])[0],
+                        "district": query.get("district", [""])[0],
+                        "cuisine": query.get("cuisine", [""])[0],
+                        "max_price": max_price,
+                    }
+                    total = count_real_restaurants(connection, **filters)
+                    items = list_real_restaurants(
+                        connection, **filters, limit=page_size,
+                        offset=(page - 1) * page_size,
+                    )
+                    self._send_json({
+                        "items": items,
+                        "total": total,
+                        "page": page,
+                        "page_size": page_size,
+                        "has_more": page * page_size < total,
+                    })
+                    return
+
+                if path.startswith("/api/real-restaurants/"):
+                    restaurant_id = self._resource_id(path, "/api/real-restaurants/")
+                    restaurant = get_real_restaurant(connection, restaurant_id)
+                    if restaurant is None:
+                        self._send_json({"error": "没有找到已核验的真实餐厅"}, 404)
+                    else:
+                        self._send_json(restaurant)
+                    return
+
                 if path == "/api/merchants":
-                    max_price = query.get("max_price", [""])[0]
-                    if max_price:
+                    max_price = query.get("max_price", [""])[0] or None
+                    if max_price is not None:
                         try:
                             max_price = int(max_price)
                         except ValueError as error:

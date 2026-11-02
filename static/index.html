@@ -8,6 +8,7 @@
   <title>夜寻 · 今晚吃点什么</title>
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="/experience.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 </head>
 <body>
   <div class="ambient ambient-one" aria-hidden="true"></div>
@@ -20,6 +21,7 @@
     <nav class="main-nav" aria-label="主导航">
       <button class="nav-link active" data-page="chat">聊聊今晚</button>
       <button class="nav-link" data-page="merchants">商家小册</button>
+      <button class="nav-link" data-page="real-restaurants">真实餐厅</button>
       <button class="nav-link" data-page="saved">今晚清单 <span id="saved-count" class="nav-count">0</span></button>
       <button class="nav-link" data-page="suggestions">留言建议</button>
     </nav>
@@ -35,7 +37,7 @@
   <footer class="site-footer">
     <a class="footer-brand" href="/">夜寻</a>
     <span>把选择交给今晚的胃口，也把决定留给自己。</span>
-    <span>研究原型 · 演示商户数据</span>
+    <span>真实餐厅需经核验 · 演示资料单独标注</span>
   </footer>
 
   <dialog id="merchant-dialog" class="merchant-dialog">
@@ -47,6 +49,8 @@
     <div id="compare-detail"></div>
   </dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="/app.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+  <script src="/wuhan_map.js" defer></script>
+  <script src="/app.js" defer></script>
 </body>
 </html>

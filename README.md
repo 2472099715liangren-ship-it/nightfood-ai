@@ -53,6 +53,10 @@ nightfood-ai/
 ├── services.py            # 偏好解析、推荐评分和 AI 助手
 ├── conversation.py        # 多轮偏好整理与追问建议
 ├── comparison.py          # 2–3 家商户的结构化对比
+├── restaurant_catalog.py  # 真实餐厅来源、导入校验和人工审核
+├── import_restaurants.py  # CSV 预览与导入命令
+├── review_restaurants.py  # 待核验资料的审核命令
+├── manage_restaurant_sources.py # 来源许可暂停/恢复
 ├── start.sh               # 本地启动脚本
 ├── .env.example           # 本地环境配置模板
 ├── static/
@@ -60,6 +64,8 @@ nightfood-ai/
 │   ├── style.css          # 淡绿主题、布局与响应式
 │   ├── experience.css     # 追问、对比、收藏清单的样式
 │   └── app.js             # 页面交互及状态管理
+├── docs/WUHAN_REAL_DATA.md # 武汉真实餐厅数据来源与运营规范
+├── data/                  # CSV 模板；不要提交未经授权的商家数据
 └── tests/
     ├── test_app.py        # 数据库和服务层测试
     ├── test_experience.py # 多轮对话、对比、收藏逻辑
@@ -75,6 +81,10 @@ nightfood-ai/
 | GET | /api/health | 服务健康检查 |
 | GET | /api/bootstrap | 商圈信息和 AI 配置状态 |
 | GET | /api/merchants | 搜索和筛选商家 |
+| GET | /api/real-areas | 武汉 13 个行政区和功能区列表 |
+| GET | /api/real-catalog/summary | 全市各区已核验真实餐厅数量 |
+| GET | /api/real-restaurants | 只返回已核验且来源许可有效的真实餐厅 |
+| GET | /api/real-restaurants/{id} | 真实餐厅详情及已核验扩展信息（如有） |
 | GET | /api/merchants/{id} | 商家详情、菜单和评价 |
 | GET | /api/reviews | 体验评价列表及统计 |
 | GET | /api/favorites | 当前访客收藏 ID 列表（兼容旧接口） |
@@ -90,9 +100,74 @@ nightfood-ai/
 
 ## 数据库与旧数据
 
-数据库默认保存在 data/night.db，可以通过 APP_DB 指定其他位置。首次启动会创建表并生成 4 个商圈、24 家演示商户和 72 道演示菜品。重复启动不会重复生成演示商户。
+数据库默认保存在 data/night.db，可以通过 APP_DB 指定其他位置。首次启动会创建表并生成 4 个演示商圈、24 家演示商户和 72 道演示菜品；真实餐厅数据使用独立表，不会混入演示商户。另建立武汉 13 个行政区及 6 个功能区的覆盖目录。当前真实餐厅表为空，只有来源许可有效且人工核验通过的记录才会进入真实餐厅公开目录。
 
 从旧版本升级时，程序只对商家表增加简介、地址标签和数据来源说明字段，并新建建议表，不会主动删除旧的收藏、评价、问卷或推荐记录。升级前仍建议自行备份 data/night.db。
+
+
+## 武汉真实餐厅数据库
+
+真实餐厅与演示商户分表保存。系统包含来源登记、CSV 导入批次、字段变更日志、重复记录复核、营业时间/菜品扩展表和人工审核状态。公开 API 只返回 record_status=verified 且来源 permission_status=approved 的记录。营业时间和菜品扩展表已预留，但当前 CSV 导入器暂不支持写入这两类信息。
+
+**重要：** 代码已准备好导入和审核流程，但目前没有导入任何真实餐厅名录。武汉公共数据需要按授权目录和协议获取；地图/点评平台资料也需确认存储和展示许可。公开网页可见不代表可以批量复制。
+
+完整数据来源和操作要求见 docs/WUHAN_REAL_DATA.md。
+
+### 导入真实餐厅 CSV
+
+先复制 data/wuhan_restaurants_template.csv，填写有权使用的真实门店资料。默认命令只预览，不会修改数据库：
+
+~~~bash
+python import_restaurants.py data/my_wuhan_restaurants.csv --source-code merchant_claimed
+~~~
+
+首次登记数据来源时，必须提供许可说明并显式确认权利；实际写入还必须追加 --apply：
+
+~~~bash
+python import_restaurants.py data/my_wuhan_restaurants.csv \
+  --source-code merchant_claimed \
+  --source-name "商家授权提交" \
+  --source-type merchant_submission \
+  --license-note "已取得商家对本批门店资料的存储和展示授权" \
+  --approved-by "operator" \
+  --rights-confirmed \
+  --apply
+~~~
+
+导入记录默认进入待审核队列，不会直接公开。先查看：
+
+~~~bash
+python review_restaurants.py
+~~~
+
+查看或暂停数据来源；来源许可变化时应及时暂停公开：
+
+~~~bash
+python manage_restaurant_sources.py
+python manage_restaurant_sources.py --suspend merchant_claimed
+~~~
+
+恢复前必须重新核验权利并明确确认：
+
+~~~bash
+python manage_restaurant_sources.py --reinstate merchant_claimed \
+  --rights-confirmed --approved-by "operator"
+~~~
+
+人工核对地址和来源后再批准：
+
+~~~bash
+python review_restaurants.py --approve 12,13 --reviewed-by "reviewer" \
+  --note "已核对门店地址和授权凭证"
+~~~
+
+### 真实数据字段原则
+
+- 未知价格保留为空，不补造人均消费。
+- 未知营业状态为 unknown，不显示“正在营业”。
+- 不复制未经许可的第三方评分、评论或图片。
+- 来源许可暂停后，该来源下的真实记录会从公开 API 隐藏。
+- AI 推荐暂时继续使用独立演示数据，不把不完整真实数据混入排序。
 
 ## 测试
 
@@ -113,15 +188,15 @@ python3 -m unittest discover -s tests -v
 当前功能分支从尚未合并的淡绿色改版分支创建，新 PR 的目标分支也是淡绿色改版分支，避免把旧深色版误带进新开发。
 
 ~~~bash
-git clone --branch feature/conversation-compare-tonight-list --single-branch \
+git clone --branch feature/wuhan-real-restaurant-catalog --single-branch \
   https://github.com/2472099715liangren-ship-it/nightfood-ai.git \
-  ~/nightfood-ai-next
+  ~/nightfood-ai-wuhan-data
 
-cd ~/nightfood-ai-next
-PORT=8001 sh start.sh
+cd ~/nightfood-ai-wuhan-data
+PORT=8002 sh start.sh
 ~~~
 
-本地浏览器打开 http://localhost:8001。首次运行会使用独立数据库，不覆盖旧项目的数据。若之前预览的 8000 端口服务仍在运行，两个本地预览可以共存。
+本地浏览器打开 http://localhost:8002。首次运行会使用独立数据库，不覆盖旧项目的数据。若之前预览的 8000 端口服务仍在运行，两个本地预览可以共存。
 
 ## 体验注意事项
 
@@ -129,3 +204,33 @@ PORT=8001 sh start.sh
 - 换一批只在符合现有约束的商户中轮换，若没有新的会明确提示，不会虚构商户。
 - 对比排序是使用演示价格、等待和评分的可解释规则，并非实时 AI 评测；到店前仍需核实。
 - 收藏仅按浏览器本地访客 ID 区分，不是账号认证，清理浏览器存储会丢失访客 ID。
+
+
+## 武汉真实餐厅数据库（新增）
+
+- 新增独立真实餐厅数据表、武汉 13 个行政区覆盖统计、来源许可、导入批次、审核状态、变更日志与疑似重复核查。
+- **来源资料和人工核验必须处于最近两个自然年内。** 缺少更新日期、超过两年或来源许可暂停的数据自动从真实餐厅目录和地图隐藏。
+- 页面新增「真实餐厅」入口，单独显示资料来源、最新核验日期、可确认的营业信息；演示商家不能混入。
+- 真实门店可以导入**经权利人授权、拍摄时间在两年内**的店面照片。照片经过独立审核后才显示，未获得授权时显示“照片待核验”。
+- 真实餐厅地图使用 Leaflet：列表/地图切换、与区域和口味筛选同步的真实坐标点位、标记详情。缺少坐标的门店不虚构位置。
+- 真实餐厅资料未导入或未核验时，真实目录会为空，这是刻意的数据真实性保护。
+
+完整的 CSV 模板、授权、入库、审核和照片导入操作：
+
+**[武汉真实数据规范](docs/WUHAN_REAL_DATA.md)** · [空白 CSV 模板](examples/wuhan_restaurants_template.csv)
+
+初次预览这条开发分支（与之前版本分开）：
+
+~~~bash
+git clone --branch feature/wuhan-real-restaurant-catalog --single-branch \
+  https://github.com/2472099715liangren-ship-it/nightfood-ai.git \
+  ~/nightfood-ai-wuhan-real
+cd ~/nightfood-ai-wuhan-real
+PORT=8002 sh start.sh
+~~~
+
+浏览器打开 http://localhost:8002 。新项目首次创建的是独立 SQLite 数据库；不覆盖之前的演示项目。若要导入真实门店，需先取得合法使用许可，按照 docs/WUHAN_REAL_DATA.md 执行。
+
+地图前端采用 Leaflet CDN，预览时需要联网。OpenStreetMap 社区瓦片只用作低流量的开发/人工预览；正式公开部署需要选择满足商业或大流量使用需求的地图瓦片服务，并遵守署名和访问政策。照片存储位置默认是 data/restaurant_photos，部署时应挂载可持久化的私有目录。
+
+**目前代码已搭建真实餐厅的可信入库和可视化链路，没有自动获取任何未经授权的全市商户名单。** 旧的 AI 对话与收藏功能仍依赖明确标识的演示数据，不能用于宣称真实餐厅实时推荐。
