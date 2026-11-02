@@ -1,5 +1,6 @@
 import json
 import os
+from datetime import date
 import tempfile
 import threading
 import unittest
@@ -117,6 +118,7 @@ class HttpApiTests(unittest.TestCase):
             "address": "武汉市江岸区测试路 1 号",
             "source_url": "merchant-submission:http-test-1",
             "business_status": "unknown",
+            "source_updated_at": date.today().isoformat(),
         }
         with database.connect() as connection:
             register_source(
