@@ -29,6 +29,7 @@ from database import (
 )
 from services import SCENES, chat
 from comparison import compare_merchants
+from real_catalog import public_real_merchants, catalog_coverage
 
 
 ROOT = Path(__file__).resolve().parent
@@ -124,6 +125,21 @@ class NightFindHandler(BaseHTTPRequestHandler):
                             "ai_enabled": bool(os.environ.get("OPENAI_API_KEY", "").strip()),
                         }
                     )
+                    return
+
+                if path == "/api/real-merchants":
+                    result = public_real_merchants(
+                        connection,
+                        district=query.get("district", [""])[0],
+                        keyword=query.get("keyword", [""])[0],
+                        limit=query.get("limit", ["30"])[0],
+                        offset=query.get("offset", ["0"])[0],
+                    )
+                    self._send_json(result)
+                    return
+
+                if path == "/api/real-merchants/coverage":
+                    self._send_json(catalog_coverage(connection))
                     return
 
                 if path == "/api/merchants":
