@@ -308,6 +308,7 @@ def _ask_openai(message, history, preferences, items):
             "price_per_person": item["price"],
             "wait_minutes": item["wait"],
             "match_score": item["score"],
+            "description": item["description"],
         }
         for item in items[:8]
     ]
@@ -371,8 +372,11 @@ def chat(connection, payload, session_id, districts):
         history = []
 
     mode = "local"
+    is_help_request = any(
+        word in message for word in ("怎么用", "帮助", "你能做什么", "功能介绍")
+    )
     reply = _local_reply(preferences, items)
-    if any(word in message for word in ("怎么用", "帮助", "你能做什么")):
+    if is_help_request:
         reply = (
             "你可以像和朋友商量晚饭一样告诉我：想去哪一片、人均大概多少、"
             "几点到、能等多久，以及喜欢什么口味。我会先按这些条件筛选，"
@@ -387,7 +391,7 @@ def chat(connection, payload, session_id, districts):
                 mode = "openai"
             else:
                 mode = "fallback"
-        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, json.JSONDecodeError):
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError):
             mode = "fallback"
 
     return {
