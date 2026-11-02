@@ -10,6 +10,7 @@ import urllib.error
 import urllib.request
 
 from database import list_merchants, save_recommendation_run
+from conversation import choose_candidate_round, follow_up_suggestions, refine_preferences
 
 
 SCENES = ("朋友聚会", "独自用餐", "出游夜宵")
@@ -78,7 +79,7 @@ def parse_preferences(message, context, districts):
             break
 
     budget_match = re.search(
-        r"(?:人均|预算|每人|每位|控制在|不超过|最多)(?:在|为|约)?\s*[¥￥]?\s*(\d{1,3})",
+        r"(?:人均|预算|每人|每位|控制在)(?:在|为|约)?\s*[¥￥]?\s*(\d{1,3})",
         message,
     )
     if not budget_match:
@@ -360,13 +361,20 @@ def chat(connection, payload, session_id, districts):
     if not message or len(message) > 2000:
         raise ValueError("请写下你的需求（最多 2000 个字符）")
 
-    preferences = parse_preferences(
-        message, payload.get("context"), districts
+    previous_context = payload.get("context")
+    preferences = parse_preferences(message, previous_context, districts)
+    preferences, known = refine_preferences(
+        message, previous_context, preferences, districts
     )
-    items = recommend(connection, preferences, session_id)
+    all_items = recommend(connection, preferences, session_id)
     # Finish the short database write before waiting for an external AI response.
     connection.commit()
-    tips = _build_tips(preferences, items)
+
+    visible_items, exhausted = choose_candidate_round(
+        all_items, message, payload.get("seen_ids", [])
+    )
+    follow_up = follow_up_suggestions(preferences, known, districts, all_items)
+    tips = _build_tips(preferences, all_items)
     history = payload.get("history", [])
     if not isinstance(history, list):
         history = []
@@ -375,7 +383,12 @@ def chat(connection, payload, session_id, districts):
     is_help_request = any(
         word in message for word in ("怎么用", "帮助", "你能做什么", "功能介绍")
     )
-    reply = _local_reply(preferences, items)
+    reply = _local_reply(preferences, visible_items)
+    if any(word in message for word in ("换一批", "再换几家", "看看别的")):
+        if exhausted:
+            reply = "当前条件下可选的演示商家已经看过一轮啦。我再把符合条件的选项列出来，你也可以放宽预算或换个口味。"
+        elif visible_items:
+            reply = "好呀，我换几家还没展示过、也符合条件的演示商家。你可以接着比较价格和等待时间。"
     if is_help_request:
         reply = (
             "你可以像和朋友商量晚饭一样告诉我：想去哪一片、人均大概多少、"
@@ -385,7 +398,7 @@ def chat(connection, payload, session_id, districts):
 
     if os.environ.get("OPENAI_API_KEY", "").strip():
         try:
-            ai_reply = _ask_openai(message, history, preferences, items)
+            ai_reply = _ask_openai(message, history, preferences, visible_items)
             if ai_reply:
                 reply = ai_reply
                 mode = "openai"
@@ -396,9 +409,13 @@ def chat(connection, payload, session_id, districts):
 
     return {
         "reply": reply,
-        "items": items[:8],
-        "total": len(items),
-        "constraints": preferences,
+        "items": visible_items[:3] if (
+            any(word in message for word in ("换一批", "再换几家", "看看别的"))
+        ) else visible_items[:8],
+        "total": len(all_items),
+        "constraints": {**preferences, "known": known},
         "tips": tips,
+        "follow_up": follow_up,
         "mode": mode,
+        "sample_data": True,
     }

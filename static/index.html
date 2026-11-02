@@ -7,6 +7,7 @@
   <meta name="description" content="夜寻，轻松找到今晚适合你的那一餐。">
   <title>夜寻 · 今晚吃点什么</title>
   <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/experience.css">
 </head>
 <body>
   <div class="ambient ambient-one" aria-hidden="true"></div>
@@ -19,6 +20,7 @@
     <nav class="main-nav" aria-label="主导航">
       <button class="nav-link active" data-page="chat">聊聊今晚</button>
       <button class="nav-link" data-page="merchants">商家小册</button>
+      <button class="nav-link" data-page="saved">今晚清单 <span id="saved-count" class="nav-count">0</span></button>
       <button class="nav-link" data-page="suggestions">留言建议</button>
     </nav>
     <div class="header-note"><span class="status-dot"></span><span>慢慢挑，不着急</span></div>
@@ -27,6 +29,8 @@
   <main id="app" class="page-shell">
     <div class="loading-state">正在准备今晚的菜单…</div>
   </main>
+
+  <div id="compare-tray" class="compare-tray" aria-live="polite" hidden></div>
 
   <footer class="site-footer">
     <a class="footer-brand" href="/">夜寻</a>
@@ -37,6 +41,10 @@
   <dialog id="merchant-dialog" class="merchant-dialog">
     <button class="dialog-close" type="button" aria-label="关闭">×</button>
     <div id="merchant-detail"></div>
+  </dialog>
+  <dialog id="compare-dialog" class="compare-dialog">
+    <button class="dialog-close compare-close" type="button" aria-label="关闭餐厅对比">×</button>
+    <div id="compare-detail"></div>
   </dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="/app.js"></script>

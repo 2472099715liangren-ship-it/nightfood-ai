@@ -8,6 +8,9 @@
   const dialog = document.getElementById("merchant-dialog");
   const detail = document.getElementById("merchant-detail");
   const toastNode = document.getElementById("toast");
+  const compareTray = document.getElementById("compare-tray");
+  const compareDialog = document.getElementById("compare-dialog");
+  const compareDetail = document.getElementById("compare-detail");
   const sessionKey = "nightfind-session";
   const sessionId = getSessionId();
 
@@ -16,6 +19,10 @@
   let currentPage = "chat";
   let conversation = [];
   let conversationContext = {};
+  let savedIds = new Set();
+  let comparisonIds = new Map();
+  let seenRecommendationIds = new Set();
+  let chatBusy = false;
   let toastTimer = null;
 
   function getSessionId() {
@@ -118,9 +125,17 @@
           (merchant.closes ? "<span>演示营业至次日 " + (merchant.closes - 24) + ":00</span>" : "") +
         "</div>" +
         '<div class="tag-row">' + tags + score + "</div>" +
-        '<button class="quiet-link" type="button" data-merchant="' + merchant.id + '">' +
-          (compact ? "看看这家 →" : "了解这家店 →") +
-        "</button>" +
+        '<div class="merchant-actions">' +
+          '<button class="quiet-link" type="button" data-merchant="' + merchant.id + '">' +
+            (compact ? "看看这家 →" : "了解这家店 →") +
+          "</button>" +
+          '<button class="soft-action ' + (savedIds.has(merchant.id) ? "is-active" : "") +
+            '" type="button" data-favorite="' + merchant.id + '" aria-pressed="' + savedIds.has(merchant.id) +
+            '">' + (savedIds.has(merchant.id) ? "♥ 已收藏" : "♡ 今晚清单") + "</button>" +
+          '<button class="soft-action ' + (comparisonIds.has(merchant.id) ? "is-active" : "") +
+            '" type="button" data-compare="' + merchant.id + '" aria-pressed="' + comparisonIds.has(merchant.id) +
+            '">' + (comparisonIds.has(merchant.id) ? "✓ 已选择" : "⇄ 对比") + "</button>" +
+        "</div>" +
       "</div>" +
     "</article>";
   }
@@ -139,12 +154,14 @@
         '<div class="chat-card">' +
           '<div class="chat-card-top"><div class="helper-avatar">寻</div>' +
             '<div><strong>夜寻小帮手</strong><small>陪你一起挑，不替你做决定</small></div>' +
-            '<span class="mode-pill">' + modeLabel + "</span></div>" +
+            '<span class="mode-pill">' + modeLabel + '</span>' +
+            '<button type="button" class="reset-chat" data-reset-chat="1">重新聊</button></div>' +
           '<div id="chat-messages" class="chat-messages">' +
             '<div class="message assistant"><div class="message-avatar">寻</div>' +
               '<div class="message-content"><p>晚上好呀。你今天想吃点热乎的，还是想和朋友慢慢坐一会儿？</p>' +
               '<p>告诉我大概在哪、预算多少，或者只说一句“想吃点清淡的”也可以。</p></div></div>' +
           "</div>" +
+          '<div id="context-row" class="context-row" aria-live="polite"></div>' +
           '<div class="chat-suggestions">' +
             '<button type="button" data-prompt="人均 50 元左右，想吃点清淡的">🥬 想吃清淡一点</button>' +
             '<button type="button" data-prompt="江汉路附近，朋友聚会，人均 100 元以内">🧑‍🤝‍🧑 和朋友聚餐</button>' +
@@ -181,8 +198,10 @@
 
     // Keep the conversation when the visitor switches to another section.
     conversation.forEach(function (entry) {
-      appendMessage(entry.role, entry.content);
+      appendMessage(entry.role, entry.content, entry.extraHtml);
     });
+    renderContext();
+    refreshActionButtons();
   }
 
   function appendMessage(role, text, extraHtml) {
@@ -202,13 +221,49 @@
     return bubble;
   }
 
+  function renderContext() {
+    const row = document.getElementById("context-row");
+    if (!row) return;
+    const known = conversationContext.known || [];
+    const values = [];
+    if (known.includes("district")) values.push(conversationContext.district);
+    if (known.includes("budget")) values.push("人均 ≤ ¥" + conversationContext.budget);
+    if (known.includes("wait")) values.push("等位 ≤ " + conversationContext.wait + " 分钟");
+    if (known.includes("cuisine")) values.push(conversationContext.cuisine);
+    if (known.includes("scene")) values.push(conversationContext.scene);
+    row.innerHTML = values.length
+      ? '<span class="context-label">记住了：</span>' +
+          values.map(function (item) {
+            return '<span class="context-pill">' + escapeHtml(item) + "</span>";
+          }).join("")
+      : "";
+  }
+
+  function sendQuickPrompt(message) {
+    if (!message) return;
+    if (currentPage !== "chat") renderChatPage();
+    const form = document.getElementById("chat-form");
+    if (!form) return;
+    form.elements.message.value = message;
+    form.requestSubmit();
+  }
+
   async function submitChat(event) {
     event.preventDefault();
+    if (chatBusy) {
+      showToast("这一条正在整理，稍等一下就好。");
+      return;
+    }
     const form = event.currentTarget;
     const input = form.elements.message;
     const message = input.value.trim();
     if (!message) return;
 
+    const isAlternate = /换一批|再换几家|看看别的/.test(message);
+    if (!isAlternate) seenRecommendationIds.clear();
+    chatBusy = true;
+    const sendButton = form.querySelector('button[type="submit"]');
+    sendButton.disabled = true;
     input.value = "";
     appendMessage("user", message);
     const pending = appendMessage("assistant", "我看看有哪些选择…");
@@ -220,25 +275,42 @@
         body: {
           message: message,
           context: conversationContext,
-          history: conversation.slice(-8)
+          history: conversation.slice(-8).map(function (entry) {
+            return { role: entry.role, content: entry.content };
+          }),
+          seen_ids: Array.from(seenRecommendationIds)
         }
       });
       pending.remove();
       conversation.push({ role: "user", content: message });
-      conversation.push({ role: "assistant", content: result.reply });
       conversationContext = result.constraints || {};
 
       let extra = "";
       if (result.items && result.items.length) {
         extra += '<div class="chat-recommendations"><div class="recommendation-heading">' +
-          "<strong>我帮你挑出的几家</strong><span>" + result.total + " 家符合条件</span></div>" +
+          "<strong>我帮你挑出的几家</strong><span>" + result.total +
+          " 家符合当前条件</span></div>" +
           result.items.slice(0, 3).map(function (merchant) {
+            seenRecommendationIds.add(merchant.id);
             return '<div class="chat-merchant"><div class="chat-merchant-icon">' +
               cuisineEmoji(merchant.cuisine) + "</div><div><b>" +
               escapeHtml(merchant.name) + "</b><small>人均 ¥" + merchant.price +
               " · 等位约 " + merchant.wait + " 分钟</small></div>" +
-              '<button type="button" data-merchant="' + merchant.id + '">看看</button></div>';
+              '<div class="chat-merchant-actions">' +
+                '<button type="button" data-merchant="' + merchant.id + '">看看</button>' +
+                '<button type="button" data-favorite="' + merchant.id + '">♡ 留下</button>' +
+                '<button type="button" data-compare="' + merchant.id + '">⇄ 对比</button>' +
+              "</div></div>";
           }).join("") + "</div>";
+      }
+      if (result.follow_up && result.follow_up.actions) {
+        extra += '<div class="followup-section"><p class="followup-question">' +
+          escapeHtml(result.follow_up.question || "还想怎么挑？") + "</p>" +
+          '<div class="followup-options">' +
+          result.follow_up.actions.map(function (action) {
+            return '<button type="button" class="followup-chip" data-quick-prompt="' +
+              escapeHtml(action.message) + '">' + escapeHtml(action.label) + "</button>";
+          }).join("") + "</div></div>";
       }
       if (result.tips && result.tips.length) {
         extra += '<div class="friendly-tips"><strong>顺手提醒</strong><ul>' +
@@ -248,11 +320,23 @@
       }
       extra += '<span class="answer-mode">' +
         (result.mode === "openai" ? "AI 帮你整理" : "按现有资料整理") +
-        "</span>";
-      appendMessage("assistant", result.reply, extra);
+        " · 商家资料为演示数据</span>";
+      conversation.push({ role: "assistant", content: result.reply, extraHtml: extra });
+      if (currentPage === "chat" && document.getElementById("chat-messages")) {
+        appendMessage("assistant", result.reply, extra);
+        renderContext();
+        refreshActionButtons();
+      } else {
+        showToast("新建议已经整理好了，回到「聊聊今晚」即可查看。");
+      }
     } catch (error) {
       pending.remove();
-      appendMessage("assistant", error.message || "刚刚没连上，请再试一次。");
+      if (currentPage === "chat" && document.getElementById("chat-messages")) {
+        appendMessage("assistant", error.message || "刚刚没连上，请再试一次。");
+      }
+    } finally {
+      chatBusy = false;
+      if (sendButton.isConnected) sendButton.disabled = false;
     }
   }
 
@@ -329,6 +413,10 @@
           "</span><span>等位约 " + merchant.wait + " 分钟</span></div>" +
         '<p class="detail-address">' + escapeHtml(merchant.address_label || "商圈信息待补充") +
           " · 基础评分为演示值</p>" +
+        '<div class="merchant-actions">' +
+          '<button class="soft-action" type="button" data-favorite="' + merchant.id + '">♡ 今晚清单</button>' +
+          '<button class="soft-action" type="button" data-compare="' + merchant.id + '">⇄ 加入对比</button>' +
+        "</div>" +
         "<h3>菜单小记</h3>" + (dishes || '<p class="detail-description">暂时还没有菜单信息。</p>') +
         "<h3>大家的反馈</h3>" + (reviews || '<p class="detail-description">还没有收到评价。</p>') +
         '<form id="merchant-feedback" class="detail-feedback">' +
@@ -419,6 +507,180 @@
     }
   }
 
+  /* Tonight List: saved items belong to the browser's visitor session. */
+  function refreshActionButtons() {
+    const savedCount = document.getElementById("saved-count");
+    if (savedCount) savedCount.textContent = savedIds.size;
+    document.querySelectorAll("[data-favorite]").forEach(function (button) {
+      const isSaved = savedIds.has(Number(button.dataset.favorite));
+      button.classList.toggle("is-active", isSaved);
+      button.setAttribute("aria-pressed", String(isSaved));
+      if (button.closest(".chat-merchant-actions")) {
+        button.textContent = isSaved ? "♥ 已留" : "♡ 留下";
+      } else {
+        button.textContent = isSaved ? "♥ 已收藏" : "♡ 今晚清单";
+      }
+    });
+    document.querySelectorAll("[data-compare]").forEach(function (button) {
+      const selected = comparisonIds.has(Number(button.dataset.compare));
+      button.classList.toggle("is-active", selected);
+      button.setAttribute("aria-pressed", String(selected));
+      button.textContent = selected ? "✓ 已选" : "⇄ 对比";
+    });
+    renderCompareTray();
+  }
+
+  async function toggleFavorite(merchantId) {
+    const active = !savedIds.has(merchantId);
+    try {
+      await request("/api/favorites", {
+        method: "POST",
+        body: { merchant_id: merchantId, active: active }
+      });
+      if (active) savedIds.add(merchantId);
+      else savedIds.delete(merchantId);
+      showToast(active ? "已经放进今晚清单啦。" : "已从今晚清单移除。");
+      if (currentPage === "saved") await renderSavedPage();
+      refreshActionButtons();
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  /* Compare selection remains in memory until the visitor clears it. */
+  async function toggleComparison(merchantId) {
+    if (comparisonIds.has(merchantId)) {
+      comparisonIds.delete(merchantId);
+      refreshActionButtons();
+      return;
+    }
+    if (comparisonIds.size >= 3) {
+      showToast("一次最多对比三家，先移除一家再选吧。");
+      return;
+    }
+    try {
+      const merchant = await request("/api/merchants/" + merchantId);
+      comparisonIds.set(merchantId, merchant.name);
+      refreshActionButtons();
+      if (comparisonIds.size === 2) {
+        showToast("已选两家，可以开始对比啦。");
+      }
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  function renderCompareTray() {
+    if (!compareTray) return;
+    if (!comparisonIds.size) {
+      compareTray.hidden = true;
+      compareTray.innerHTML = "";
+      return;
+    }
+    compareTray.hidden = false;
+    const names = Array.from(comparisonIds.values()).map(escapeHtml).join("、");
+    compareTray.innerHTML =
+      '<div class="compare-tray-summary"><b>已选 ' + comparisonIds.size +
+      ' / 3 家</b><small>' + names + "</small></div>" +
+      '<button type="button" class="soft-action" data-clear-compare="1">清空</button>' +
+      '<button type="button" class="button-primary" data-open-compare="1"' +
+        (comparisonIds.size < 2 ? " disabled" : "") + '>一起比较 →</button>';
+  }
+
+  async function showComparison() {
+    const ids = Array.from(comparisonIds.keys());
+    if (ids.length < 2 || ids.length > 3) {
+      showToast("请先选择两到三家餐厅。");
+      return;
+    }
+    try {
+      const params = new URLSearchParams({ ids: ids.join(",") });
+      const known = conversationContext.known || [];
+      if (known.includes("scene")) params.set("scene", conversationContext.scene);
+      const result = await request("/api/compare?" + params.toString());
+      const winner = result.summary.recommended_id;
+      const cols = result.items.map(function (merchant) {
+        const isTop = merchant.id === winner;
+        const highlights = merchant.highlights.map(function (label) {
+          return "<span>" + escapeHtml(label) + "</span>";
+        }).join("");
+        return '<article class="compare-column ' + (isTop ? "top" : "") + '">' +
+          '<div class="dish-emoji" aria-hidden="true">' +
+            cuisineEmoji(merchant.cuisine) + "</div>" +
+          '<h3>' + escapeHtml(merchant.name) + "</h3>" +
+          '<div class="compare-metric"><span>人均</span><b>¥' + merchant.price + "</b></div>" +
+          '<div class="compare-metric"><span>预计等位</span><b>' + merchant.wait + " 分钟</b></div>" +
+          '<div class="compare-metric"><span>菜系</span><b>' + escapeHtml(merchant.cuisine) + "</b></div>" +
+          '<div class="compare-metric"><span>商圈</span><b>' + escapeHtml(merchant.district) + "</b></div>" +
+          '<div class="compare-metric"><span>演示评分</span><b>★ ' +
+            Number(merchant.rating).toFixed(1) + "</b></div>" +
+          '<div class="compare-tags">' + highlights + "</div>" +
+          '<div class="merchant-actions">' +
+            '<button class="soft-action" type="button" data-favorite="' +
+              merchant.id + '">♡ 今晚清单</button>' +
+          "</div>" +
+        "</article>";
+      }).join("");
+      compareDetail.innerHTML =
+        '<span class="eyebrow">CHOOSE WHAT MATTERS TO YOU</span>' +
+        '<h2>这几家，怎么选？</h2>' +
+        '<p class="compare-intro">按照人均、等位和口味，把优缺点放在一起看。</p>' +
+        '<div class="compare-columns ' + (result.items.length === 2 ? "two" : "") +
+          '">' + cols + "</div>" +
+        '<div class="compare-conclusion"><strong>夜寻的比较建议</strong><p>' +
+          escapeHtml(result.summary.reason) + "</p><ul>" +
+          result.summary.details.map(function (text) {
+            return "<li>" + escapeHtml(text) + "</li>";
+          }).join("") + "</ul></div>" +
+        '<p class="compare-disclaimer">' +
+          escapeHtml(result.summary.sample_notice) + "</p>";
+      compareDialog.showModal();
+      refreshActionButtons();
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  async function renderSavedPage() {
+    setActivePage("saved");
+    app.innerHTML =
+      '<section class="page-intro"><span class="eyebrow">YOUR LITTLE DINNER LIST</span>' +
+        '<h1>把心动的店，留给今晚。</h1>' +
+        '<p>收藏会留在当前浏览器的访客会话中，换设备不会自动同步。</p></section>' +
+      '<div class="saved-hero"><div><strong>今晚不必一下子决定</strong>' +
+        '<p>先记下喜欢的几家，再挑两三家放到一起比较。</p></div>' +
+        '<span class="saved-illustration" aria-hidden="true">🌿</span></div>' +
+      '<div id="saved-content"><div class="empty-state">正在翻翻今晚的清单…</div></div>';
+
+    try {
+      const result = await request("/api/saved");
+      if (currentPage !== "saved") return;
+      const merchants = result.items || [];
+      savedIds = new Set(merchants.map(function (item) { return item.id; }));
+      const content = document.getElementById("saved-content");
+      if (merchants.length) {
+        content.innerHTML = '<div class="directory-toolbar"><span>记下了 ' +
+          merchants.length + ' 家店</span><span>可以收藏、查看或加入对比</span></div>' +
+          '<div class="saved-grid">' +
+          merchants.map(function (merchant) {
+            return merchantCard(merchant, true);
+          }).join("") + '</div>' +
+          '<div class="saved-actions"><button type="button" class="button-primary" ' +
+            'data-page="merchants">再逛逛商家小册 →</button></div>';
+      } else {
+        content.innerHTML =
+          '<div class="saved-empty"><span class="empty-icon">🍵</span>' +
+            '<h2>今晚的清单还是空的</h2>' +
+            '<p>看到喜欢的店，点一下“今晚清单”就能留在这里。</p>' +
+            '<button class="button-primary" type="button" data-page="merchants">去看看有什么好吃的 →</button>' +
+          "</div>";
+      }
+      refreshActionButtons();
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
   async function navigate(page) {
     if (page === "chat") {
       renderChatPage();
@@ -426,13 +688,48 @@
       await renderMerchantPage();
     } else if (page === "suggestions") {
       await renderSuggestionsPage();
+    } else if (page === "saved") {
+      await renderSavedPage();
     }
+    refreshActionButtons();
   }
 
   document.addEventListener("click", function (event) {
     const pageButton = event.target.closest("[data-page]");
     if (pageButton) {
       navigate(pageButton.dataset.page);
+      return;
+    }
+    const quickButton = event.target.closest("[data-quick-prompt]");
+    if (quickButton) {
+      sendQuickPrompt(quickButton.dataset.quickPrompt);
+      return;
+    }
+    if (event.target.closest("[data-reset-chat]")) {
+      conversation = [];
+      conversationContext = {};
+      seenRecommendationIds.clear();
+      renderChatPage();
+      showToast("从头聊聊，今晚重新挑。");
+      return;
+    }
+    const favoriteButton = event.target.closest("[data-favorite]");
+    if (favoriteButton) {
+      toggleFavorite(Number(favoriteButton.dataset.favorite));
+      return;
+    }
+    const compareButton = event.target.closest("[data-compare]");
+    if (compareButton) {
+      toggleComparison(Number(compareButton.dataset.compare));
+      return;
+    }
+    if (event.target.closest("[data-open-compare]")) {
+      showComparison();
+      return;
+    }
+    if (event.target.closest("[data-clear-compare]")) {
+      comparisonIds.clear();
+      refreshActionButtons();
       return;
     }
     const merchantButton = event.target.closest("[data-merchant]");
@@ -449,12 +746,21 @@
     if (event.target === dialog) dialog.close();
   });
 
+  document.querySelector(".compare-close").addEventListener("click", function () {
+    compareDialog.close();
+  });
+  compareDialog.addEventListener("click", function (event) {
+    if (event.target === compareDialog) compareDialog.close();
+  });
+
   async function start() {
     try {
       const bootstrap = await request("/api/bootstrap");
       districts = bootstrap.districts || [];
       aiEnabled = Boolean(bootstrap.ai_enabled);
+      savedIds = new Set(bootstrap.favorites || []);
       renderChatPage();
+      refreshActionButtons();
     } catch (error) {
       app.innerHTML = '<div class="empty-state">暂时连接不上夜寻服务。请确认终端里的服务仍在运行，然后刷新页面。</div>';
       showToast(error.message);

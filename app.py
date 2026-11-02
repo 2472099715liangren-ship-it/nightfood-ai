@@ -20,13 +20,15 @@ from database import (
     initialize_database,
     list_districts,
     list_favorites,
+    list_saved_merchants,
     list_merchants,
     list_reviews,
     review_summary,
     set_favorite,
     suggestion_summary,
 )
-from services import chat
+from services import SCENES, chat
+from comparison import compare_merchants
 
 
 ROOT = Path(__file__).resolve().parent
@@ -36,6 +38,7 @@ SESSION_PATTERN = re.compile(r"^[A-Za-z0-9-]{1,80}$")
 STATIC_FILES = {
     "/": "index.html",
     "/style.css": "style.css",
+    "/experience.css": "experience.css",
     "/app.js": "app.js",
 }
 
@@ -169,6 +172,23 @@ class NightFindHandler(BaseHTTPRequestHandler):
                     self._send_json(list_favorites(connection, session_id))
                     return
 
+                if path == "/api/saved":
+                    session_id = self._session_id()
+                    self._send_json({
+                        "items": list_saved_merchants(connection, session_id)
+                    })
+                    return
+
+                if path == "/api/compare":
+                    selected_scene = query.get("scene", [""])[0]
+                    if selected_scene not in SCENES:
+                        selected_scene = ""
+                    result = compare_merchants(
+                        connection, query.get("ids", [""])[0], scene=selected_scene
+                    )
+                    self._send_json(result)
+                    return
+
                 self._send_json({"error": "接口不存在"}, 404)
 
         except ValueError as error:
@@ -237,11 +257,11 @@ class NightFindHandler(BaseHTTPRequestHandler):
                     ).fetchone()
                     if not exists:
                         raise ValueError("没有找到这家商户")
+                    active = payload.get("active")
+                    if not isinstance(active, bool):
+                        raise ValueError("收藏操作需要明确的状态")
                     set_favorite(
-                        connection,
-                        session_id,
-                        merchant_id,
-                        bool(payload.get("active")),
+                        connection, session_id, merchant_id, active
                     )
                     connection.commit()
                     self._send_json({"ok": True})

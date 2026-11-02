@@ -6,9 +6,11 @@
 
 ## 功能结构
 
-1. **聊聊今晚**：自然语言描述位置、预算、时间、口味和就餐场景；按数据库中的候选商户筛选，再生成推荐理由和实用建议。
-2. **商家小册**：搜索商家、按商圈/菜系/人均预算筛选，查看商家介绍、菜单和已提交的体验反馈。
-3. **留言建议**：提交功能建议、商家信息纠错和使用体验，后台只统计数量与分类，不公开其他用户的原文。
+1. **聊聊今晚**：多轮对话保留已明确提供的商圈、预算和口味，显示偏好小标签；按缺失信息追问，也可点击“便宜一点”“少等一会”“换一批”。支持从推荐卡片直接收藏和选择对比。
+2. **商家小册**：搜索商家、按商圈/菜系/人均预算筛选，查看商家介绍、菜单和已提交的体验反馈；商家卡片可直接加入清单或对比。
+3. **今晚清单**：使用原有 SQLite 收藏表，在同一个浏览器的访客会话里保存餐厅；可随时取消收藏并从清单开始比较，不需要注册。
+4. **餐厅对比**：选择 2–3 家商户，查看人均价格、预计等位、菜系、演示评分，以及依据透明规则计算的对比建议。
+5. **留言建议**：提交功能建议、商家信息纠错和使用体验，后台只统计数量与分类，不公开其他用户的原文。
 
 界面采用淡绿色和暖白色，适配手机和桌面，并提供轻量过渡动画。
 
@@ -49,17 +51,22 @@ nightfood-ai/
 ├── app.py                 # HTTP 路由、请求校验和静态资源
 ├── database.py            # SQLite 建表、迁移和数据访问
 ├── services.py            # 偏好解析、推荐评分和 AI 助手
+├── conversation.py        # 多轮偏好整理与追问建议
+├── comparison.py          # 2–3 家商户的结构化对比
 ├── start.sh               # 本地启动脚本
 ├── .env.example           # 本地环境配置模板
 ├── static/
 │   ├── index.html         # 页面骨架
-│   ├── style.css          # 颜色、布局、响应式和动画
-│   └── app.js             # 页面交互
+│   ├── style.css          # 淡绿主题、布局与响应式
+│   ├── experience.css     # 追问、对比、收藏清单的样式
+│   └── app.js             # 页面交互及状态管理
 └── tests/
-    └── test_app.py        # 数据库和服务层测试
+    ├── test_app.py        # 数据库和服务层测试
+    ├── test_experience.py # 多轮对话、对比、收藏逻辑
+    └── test_http.py       # API 集成测试
 ~~~
 
-后端按职责拆分：app.py 不直接编写业务 SQL；database.py 不负责 HTTP；services.py 不处理浏览器 DOM。需要调整推荐规则时优先修改 services.py，需要增加表或查询时修改 database.py。
+后端按职责拆分：app.py 不直接编写业务 SQL；database.py 不负责 HTTP；services.py 不处理浏览器 DOM。需要调整追问策略时修改 conversation.py，调整对比维度时修改 comparison.py，调整评分规则时修改 services.py。
 
 ## API
 
@@ -70,13 +77,16 @@ nightfood-ai/
 | GET | /api/merchants | 搜索和筛选商家 |
 | GET | /api/merchants/{id} | 商家详情、菜单和评价 |
 | GET | /api/reviews | 体验评价列表及统计 |
+| GET | /api/favorites | 当前访客收藏 ID 列表（兼容旧接口） |
+| GET | /api/saved | 当前访客收藏的商家详情 |
+| GET | /api/compare?ids=1,2[,3] | 2–3 家商户的透明规则对比，可附带 scene 参数 |
 | GET | /api/suggestions/summary | 建议数量与分类汇总 |
-| POST | /api/chat | 对话式餐饮建议 |
+| POST | /api/chat | 对话式餐饮建议；支持 context.known、seen_ids，返回 follow_up.actions |
 | POST | /api/suggestions | 提交用户建议 |
 | POST | /api/feedback | 提交商家体验评分 |
 | POST | /api/favorites | 保存或取消访客收藏 |
 
-写入接口使用 X-Session 请求头。当前访客会话用于原型数据隔离，不等同于账号认证。
+写入接口以及 /api/saved 使用 X-Session 请求头。当前访客会话用于原型数据隔离，不等同于账号认证。聊天上下文和对比选择保存在当前页面内存中，刷新后不恢复；收藏写入 SQLite，可在同一个浏览器的访客会话中持续使用。
 
 ## 数据库与旧数据
 
@@ -97,3 +107,25 @@ python3 -m unittest discover -s tests -v
 - 制定建议与评价的审核、举报、删除和隐私保留规则。
 - 为 AI 服务配置密钥、预算上限和错误监控；AI 只负责组织建议，商户事实仍以数据库为准。
 - 将开发用标准库 HTTP 服务替换为生产级 WSGI/ASGI 部署。
+
+## 预览这一阶段（不影响旧版）
+
+当前功能分支从尚未合并的淡绿色改版分支创建，新 PR 的目标分支也是淡绿色改版分支，避免把旧深色版误带进新开发。
+
+~~~bash
+git clone --branch feature/conversation-compare-tonight-list --single-branch \
+  https://github.com/2472099715liangren-ship-it/nightfood-ai.git \
+  ~/nightfood-ai-next
+
+cd ~/nightfood-ai-next
+PORT=8001 sh start.sh
+~~~
+
+本地浏览器打开 http://localhost:8001。首次运行会使用独立数据库，不覆盖旧项目的数据。若之前预览的 8000 端口服务仍在运行，两个本地预览可以共存。
+
+## 体验注意事项
+
+- 多轮状态只在当前页面会话中保留；不是永久 AI 记忆。
+- 换一批只在符合现有约束的商户中轮换，若没有新的会明确提示，不会虚构商户。
+- 对比排序是使用演示价格、等待和评分的可解释规则，并非实时 AI 评测；到店前仍需核实。
+- 收藏仅按浏览器本地访客 ID 区分，不是账号认证，清理浏览器存储会丢失访客 ID。

@@ -4,6 +4,7 @@ import tempfile
 import threading
 import unittest
 import urllib.request
+import urllib.error
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -95,6 +96,56 @@ class HttpApiTests(unittest.TestCase):
         )
         updated_merchant = self.call_api("/api/merchants/1")
         self.assertEqual(updated_merchant["reviews"][0]["rating"], 5)
+
+
+    def test_chat_followups_have_actionable_prompts(self):
+        first = self.call_api("/api/chat", {
+            "message": "今晚想吃烧烤",
+            "context": {},
+            "history": [],
+        })
+        self.assertTrue(first["follow_up"]["actions"])
+        self.assertTrue(any(
+            item["message"] == "江汉路"
+            for item in first["follow_up"]["actions"]
+        ))
+        next_turn = self.call_api("/api/chat", {
+            "message": "江汉路",
+            "context": first["constraints"],
+            "history": [],
+        })
+        self.assertEqual(next_turn["constraints"]["district"], "江汉路")
+        self.assertIn("district", next_turn["constraints"]["known"])
+
+    def test_compare_endpoint_rejects_bad_ids(self):
+        result = self.call_api("/api/compare?ids=1%2C2&scene=%E6%9C%8B%E5%8F%8B%E8%81%9A%E4%BC%9A")
+        self.assertEqual(len(result["items"]), 2)
+        self.assertIn(result["summary"]["recommended_id"], (1, 2))
+        for path in ("/api/compare?ids=1%2C1", "/api/compare?ids=1",
+                     "/api/compare?ids=1%2C2%2C3%2C4"):
+            with self.subTest(path=path), self.assertRaises(urllib.error.HTTPError) as caught:
+                self.call_api(path)
+            self.assertEqual(caught.exception.code, 400)
+
+    def test_save_view_remove_and_session_isolation(self):
+        self.call_api("/api/favorites", {"merchant_id": 2, "active": True})
+        saved = self.call_api("/api/saved")
+        self.assertEqual([item["id"] for item in saved["items"]], [2])
+        self.assertEqual(self.call_api("/api/favorites"), [2])
+        old_headers = self.headers
+        self.headers = {"X-Session": "another-visitor"}
+        try:
+            self.assertEqual(self.call_api("/api/saved")["items"], [])
+        finally:
+            self.headers = old_headers
+        self.call_api("/api/favorites", {"merchant_id": 2, "active": False})
+        self.assertEqual(self.call_api("/api/saved")["items"], [])
+
+    def test_experience_stylesheet_is_served(self):
+        with urllib.request.urlopen(self.base_url + "/experience.css") as response:
+            content = response.read().decode("utf-8")
+            self.assertIn("compare-tray", content)
+            self.assertIn("saved-grid", content)
 
 
 if __name__ == "__main__":

@@ -398,10 +398,26 @@ def list_favorites(connection, session_id):
     return [
         row["restaurant_id"]
         for row in connection.execute(
-            "SELECT restaurant_id FROM favorites WHERE session_id = ?",
+            "SELECT restaurant_id FROM favorites WHERE session_id = ? "
+            "ORDER BY created_at DESC, restaurant_id DESC",
             (session_id,),
         )
     ]
+
+
+def list_saved_merchants(connection, session_id):
+    """Return the current visitor's saved shops, newest first.
+
+    This uses the existing favorites table. Saving is scoped to the browser's
+    anonymous session; there is no cross-device account synchronization.
+    """
+    saved = list_favorites(connection, session_id)
+    if not saved:
+        return []
+    catalog = {
+        merchant["id"]: merchant for merchant in list_merchants(connection, limit=200)
+    }
+    return [catalog[merchant_id] for merchant_id in saved if merchant_id in catalog]
 
 
 def set_favorite(connection, session_id, merchant_id, active):
