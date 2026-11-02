@@ -169,8 +169,8 @@ class NightFindHandler(BaseHTTPRequestHandler):
                     return
 
                 if path == "/api/merchants":
-                    max_price = query.get("max_price", [""])[0]
-                    if max_price:
+                    max_price = query.get("max_price", [""])[0] or None
+                    if max_price is not None:
                         try:
                             max_price = int(max_price)
                         except ValueError as error:
