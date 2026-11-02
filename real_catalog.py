@@ -16,7 +16,7 @@ from database import connect
 WUHAN_DISTRICTS = (
     "江岸区", "江汉区", "硚口区", "汉阳区", "武昌区", "青山区",
     "洪山区", "东西湖区", "蔡甸区", "江夏区", "黄陂区", "新洲区",
-    "汉南区",
+    "汉南区", "待确认区县",
 )
 VALID_STATUSES = ("draft", "pending", "verified", "rejected")
 REQUIRED_COLUMNS = (
@@ -69,6 +69,8 @@ def _validate(record):
             raise ValueError("缺少必填字段：" + key)
     if item["district"] not in WUHAN_DISTRICTS:
         raise ValueError("行政区不属于武汉市：" + item["district"])
+    if item["district"] == "待确认区县" and item["source_name"] != "OpenStreetMap":
+        raise ValueError("待确认区县仅允许用于开放地图导入")
     url = item["source_url"]
     if not re.match(r"^https://[^\s/]+\.[^\s/]+", url):
         raise ValueError("来源链接必须为有效 HTTPS URL")
@@ -118,6 +120,14 @@ def import_real_merchants(connection, records, dry_run=False):
     if dry_run:
         return {"validated": len(prepared), "written": 0}
     for item in prepared:
+        # Do not downgrade independently verified records when refreshing OSM.
+        if item["source_name"] == "OpenStreetMap" and item["status"] == "pending":
+            existing = connection.execute(
+                "SELECT status FROM real_merchants WHERE external_id=?",
+                (item["external_id"],),
+            ).fetchone()
+            if existing and existing["status"] == "verified":
+                continue
         connection.execute("""
             INSERT INTO real_merchants (
                 external_id,name,district,address,cuisine,latitude,longitude,
@@ -160,11 +170,20 @@ def read_import_file(path):
     raise ValueError("仅支持 CSV 或 JSON")
 
 
+def _public_filter():
+    """Allow unverified OpenStreetMap entries only when visibly identified."""
+    return (
+        "(status='verified' OR "
+        "(status='pending' AND source_name='OpenStreetMap' "
+        "AND external_id LIKE 'osm:%'))"
+    )
+
+
 def public_real_merchants(connection, district="", keyword="", limit=100, offset=0):
-    """Never expose draft/pending/rejected rows."""
+    """Expose independently verified or attributed OSM community entries only."""
     limit = max(1, min(int(limit), 100))
     offset = max(0, int(offset))
-    conditions = ["status = 'verified'"]
+    conditions = [_public_filter()]
     parameters = []
     if district:
         if district not in WUHAN_DISTRICTS:
@@ -172,7 +191,7 @@ def public_real_merchants(connection, district="", keyword="", limit=100, offset
         conditions.append("district = ?")
         parameters.append(district)
     if keyword:
-        conditions.append("(name LIKE ? OR address LIKE ? OR cuisine LIKE ?)")
+        conditions.append("(name LIKE ? ESCAPE '\\' OR address LIKE ? ESCAPE '\\' OR cuisine LIKE ? ESCAPE '\\')")
         term = "%" + keyword[:80].replace("%", r"\%").replace("_", r"\_") + "%"
         parameters.extend([term] * 3)
     where = " AND ".join(conditions)
@@ -182,24 +201,35 @@ def public_real_merchants(connection, district="", keyword="", limit=100, offset
     results = connection.execute(
         "SELECT id,name,district,address,cuisine,latitude,longitude,"
         "phone,price_per_person,opening_hours,source_name,source_url,"
-        "verified_at,verification_method "
+        "verified_at,verification_method,"
+        "CASE WHEN status='verified' THEN 'verified' ELSE 'community' END AS data_quality "
         "FROM real_merchants WHERE " + where + " ORDER BY updated_at DESC,id DESC "
         "LIMIT ? OFFSET ?", parameters + [limit, offset],
     ).fetchall()
-    return {"items": [dict(row) for row in results], "total": total}
+    return {
+        "items": [dict(row) for row in results],
+        "total": total,
+        "notice": "OSM 社区收录不代表已人工核实；营业状态和地址请向商家确认。",
+        "license": "© OpenStreetMap contributors · ODbL (www.openstreetmap.org/copyright)",
+    }
 
 
 def catalog_coverage(connection):
-    """Coverage reflects published verified records only."""
+    """Count independently verified and community-mapped records separately."""
     counts = {row: 0 for row in WUHAN_DISTRICTS}
     for item in connection.execute(
         "SELECT district,COUNT(*) AS n FROM real_merchants "
         "WHERE status='verified' GROUP BY district"
     ):
         counts[item["district"]] = item["n"]
+    community = connection.execute(
+        "SELECT COUNT(*) FROM real_merchants WHERE status='pending' "
+        "AND source_name='OpenStreetMap' AND external_id LIKE 'osm:%'"
+    ).fetchone()[0]
     return {
         "city": "武汉市",
         "verified_total": sum(counts.values()),
+        "community_total": community,
         "districts": [{"name": key, "verified_count": value} for key, value in counts.items()],
-        "notice": "仅展示已核验的真实商家；数量为数据库当前收录数，不代表武汉全市实际商家总数。",
+        "notice": "社区地图收录与人工核验分开统计；数量不等于武汉全部商家。",
     }
