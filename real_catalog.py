@@ -259,7 +259,7 @@ def public_real_merchants(connection, district="", keyword="", limit=100, offset
         " AND p.permission_confirmed=1 AND p.taken_at >= ? "
         " AND substr(p.verified_at,1,10) >= ? ORDER BY p.id LIMIT 1) AS photo_id "
         "FROM real_merchants WHERE " + where + " ORDER BY updated_at DESC,id DESC "
-        "LIMIT ? OFFSET ?", parameters + [limit, offset, _fresh_cutoff(), _fresh_cutoff()],
+        "LIMIT ? OFFSET ?", [_fresh_cutoff(), _fresh_cutoff()] + parameters + [limit, offset],
     ).fetchall()
     items = []
     for row in results:
