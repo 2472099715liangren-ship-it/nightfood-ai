@@ -362,7 +362,7 @@
     if (!container) return;
     const district = document.getElementById("real-district").value;
     const keyword = document.getElementById("real-keyword").value.trim();
-    const params = new URLSearchParams({limit: "50", offset: String(page * 50)});
+    const params = new URLSearchParams({limit: "100", offset: String(page * 100)});
     if (district) params.set("district", district);
     if (keyword) params.set("keyword", keyword);
     container.innerHTML = '<p class="feature-description">正在查询武汉真实商家…</p>';
@@ -409,14 +409,14 @@
       }).join("") : '<div class="saved-empty"><h2>没有找到符合条件的真实商家</h2>' +
         '<p>可尝试清空行政区或关键词筛选。来源日期不符合近两年要求的资料不会公开。</p></div>';
       updateRealMapView();
-      if (result.total > 50) {
+      if (result.total > 100) {
         container.insertAdjacentHTML("beforeend",
           '<div class="real-pagination">' +
           '<span>第 ' + (page + 1) + ' 页 · 共 ' + result.total + ' 家（社区收录/核验）</span>' +
           '<button type="button" class="soft-action" data-real-page="' + (page - 1) +
           '"' + (page === 0 ? " disabled" : "") + '>上一页</button>' +
           '<button type="button" class="soft-action" data-real-page="' + (page + 1) +
-          '"' + ((page + 1) * 50 >= result.total ? " disabled" : "") + '>下一页</button>' +
+          '"' + ((page + 1) * 100 >= result.total ? " disabled" : "") + '>下一页</button>' +
           '</div>');
       }
     } catch (error) {
