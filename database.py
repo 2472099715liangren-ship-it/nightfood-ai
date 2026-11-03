@@ -38,7 +38,7 @@ def _add_missing_columns(connection):
             )
 
 
-def initialize_database(*, import_snapshot=True):
+def initialize_database(*, import_snapshot=True, import_bundled_catalog=True):
     """Create tables, apply safe additive migrations, and seed demo records once."""
     with connect() as connection:
         connection.executescript(
@@ -157,6 +157,10 @@ def initialize_database(*, import_snapshot=True):
         # Keep verified real merchants in separate tables from prototype data.
         from real_catalog import initialize_real_catalog
         initialize_real_catalog(connection)
+        # Seed the checked-in Wuhan merchant CSV files without network access.
+        if import_bundled_catalog:
+            from real_catalog import seed_bundled_catalog
+            seed_bundled_catalog(connection)
         # Load approved OSM snapshot only when its checksum changes.
         # No network access occurs during normal app startup.
         if import_snapshot:

@@ -16,7 +16,7 @@ class ExperienceTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.previous_database = database.DB_PATH
         database.DB_PATH = Path(self.temporary.name) / "experience.db"
-        database.initialize_database(import_snapshot=False)
+        database.initialize_database(import_snapshot=False, import_bundled_catalog=False)
         with database.connect() as connection:
             database.ensure_session(connection, "visitor-a")
             database.ensure_session(connection, "visitor-b")

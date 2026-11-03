@@ -15,7 +15,7 @@ class OsmPhotoTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.original_db_path = database.DB_PATH
         database.DB_PATH = Path(self.temp.name) / "photo-test.db"
-        database.initialize_database(import_snapshot=False)
+        database.initialize_database(import_snapshot=False, import_bundled_catalog=False)
         self.db = database.connect()
         import_real_merchants(self.db, [{
             "external_id": "test:photo-merchant",

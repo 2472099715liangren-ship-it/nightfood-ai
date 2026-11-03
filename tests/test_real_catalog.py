@@ -7,7 +7,7 @@ from pathlib import Path
 import database
 from real_catalog import (
     WUHAN_DISTRICTS, catalog_coverage, import_real_merchants,
-    public_real_merchants, read_import_file,
+    public_real_merchants, read_import_file, seed_bundled_catalog, get_public_real_merchant,
 )
 
 
@@ -33,7 +33,7 @@ class RealCatalogTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.old_path = database.DB_PATH
         database.DB_PATH = Path(self.tmp.name) / "catalog.db"
-        database.initialize_database(import_snapshot=False)
+        database.initialize_database(import_snapshot=False, import_bundled_catalog=False)
 
     def tearDown(self):
         database.DB_PATH = self.old_path
@@ -57,6 +57,20 @@ class RealCatalogTests(unittest.TestCase):
 
     def test_all_wuhan_districts_supported(self):
         self.assertEqual(len(WUHAN_DISTRICTS), 13)
+
+    def test_bundled_catalog_has_real_records_images_and_menu_prices(self):
+        with database.connect() as connection:
+            result = seed_bundled_catalog(connection)
+            self.assertEqual(result["merchants"], 55)
+            public = public_real_merchants(connection, limit=100)
+            self.assertEqual(public["total"], 55)
+            self.assertGreater(result["images"], 50)
+            self.assertGreater(result["menu_items"], 60)
+            self.assertTrue(any(item["cover_image_url"] for item in public["items"]))
+            first = public["items"][0]
+            detail = get_public_real_merchant(connection, first["id"])
+            self.assertTrue(detail["images"])
+            self.assertTrue(detail["menu_items"])
 
     def test_real_and_demo_separated(self):
         with database.connect() as connection:

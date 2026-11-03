@@ -409,6 +409,15 @@
 }
 .real-map-quality.verified { color: #456c4c; background: #e8f1e3; }
 .real-map-quality.community { color: #5f7888; background: #edf3f7; }
+.real-map-quality.web-listing { color: #80683f; background: #f5f0e5; }
+.real-map-legend .web-listing-dot { background: #d8c39b; border: 2px solid #9b8058; }
+.real-shop-dishes { color: #617b5e !important; line-height: 1.6; }
+.real-menu-list { list-style: none; margin: 10px 0 18px; padding: 0; }
+.real-menu-list li { padding: 11px 0; border-bottom: 1px solid #e7eee3; }
+.real-menu-list li > div { display: flex; justify-content: space-between; gap: 14px; color: #45674b; font-size: 12px; }
+.real-menu-list li > div span { flex: 0 0 auto; font-weight: 650; }
+.real-menu-list li small { display: block; color: #899887; font-size: 10px; line-height: 1.6; margin-top: 4px; }
+.real-menu-list a { color: #4d7957; text-decoration: underline; text-underline-offset: 2px; }
 @media (max-width: 680px) {
   .real-shop-photo-figure { width: 100%; flex-basis: auto; }
   .real-shop-photo-figure .real-shop-photo { width: 100%; height: 145px; }

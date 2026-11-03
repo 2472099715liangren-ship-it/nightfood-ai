@@ -2,7 +2,7 @@
 
 一个以武汉夜间餐饮为场景的轻量研究原型。产品首页以对话式餐饮建议为主，另设商家小册和用户建议入口。
 
-> 重要说明：当前内置的商户、菜品、价格、评分、等位和营业时间都是演示数据，不代表真实店铺或实时状态。接入真实商户前，请先取得数据授权并建立更新机制。
+> 真实资料说明：商家小册已附带 55 条武汉门店公开网页目录、55 条有授权信息的图片记录、73 条招牌菜记录（其中 16 条有可引用的明确单价）。公开网页收录不等于营业状态已人工核验；未找到可靠单价的菜品会显示“价格待核”，不会用人均价冒充单品价。原有推荐、评分、等位和营业时间演示数据仍明确与真实目录分开。
 
 ## 功能结构
 
@@ -25,6 +25,16 @@ sh start.sh
 ~~~
 
 浏览器打开 http://localhost:8000。终端保持运行，按 Ctrl+C 停止服务。
+
+第一次启动时，程序会从仓库内的 CSV 自动导入真实商家目录，不需要先手动执行数据库导入，也不会在启动时爬取网站。
+
+需要把具体门店地址补到地图上时，额外运行一次：
+
+~~~bash
+python3 import_wuhan_catalog.py --geocode
+~~~
+
+该命令使用 OpenStreetMap Nominatim，按每秒不超过一条的节奏查询具体地址并缓存 WGS84 坐标。模糊商圈、没有门牌的记录不会被猜坐标，仍会保留在列表中。
 
 可选配置：
 
@@ -53,6 +63,12 @@ nightfood-ai/
 ├── services.py            # 偏好解析、推荐评分和 AI 助手
 ├── conversation.py        # 多轮偏好整理与追问建议
 ├── comparison.py          # 2–3 家商户的结构化对比
+├── real_catalog.py         # 真实商户、图片、菜品和两年时效规则
+├── import_wuhan_catalog.py # 55家武汉门店导入及可选地址地理编码
+├── data/
+│   ├── wuhan_restaurants.csv       # 门店地址、来源、菜系和人均参考价
+│   ├── wuhan_restaurant_images.csv # 图片链接、作者、拍摄日期和授权
+│   └── wuhan_menu_items.csv        # 招牌菜和有来源的单品价格
 ├── start.sh               # 本地启动脚本
 ├── .env.example           # 本地环境配置模板
 ├── static/
@@ -68,13 +84,36 @@ nightfood-ai/
 
 后端按职责拆分：app.py 不直接编写业务 SQL；database.py 不负责 HTTP；services.py 不处理浏览器 DOM。需要调整追问策略时修改 conversation.py，调整对比维度时修改 comparison.py，调整评分规则时修改 services.py。
 
+
+## 武汉真实商家资料
+
+- **门店：55 条分店级记录**，目前覆盖江岸、江汉、武昌、汉阳、洪山 5 个区，筛选器支持武汉 13 个行政区。搜索、区县筛选、列表、详情和地图共用独立的 `real_merchants` 表，不会混入演示商家。
+- **图片：55 条**，均记录来源、作者、拍摄日期和 Creative Commons 授权。只有少数是特定门店照片；其余明确标注为菜品参考图，不能误认为该分店实拍。
+- **菜品：73 条**，其中 16 条有来源明确的单品价格；其余只列出招牌菜名并标注未找到可靠公开单价。人均参考价和单品价格分开存储。
+- **地图：**使用 Leaflet + OpenStreetMap，当前预置 12 个 WGS84 坐标点（含高德 GCJ-02 转换点并注明近似性），只有有坐标的门店才会放置标记。运行 `python3 import_wuhan_catalog.py --geocode` 可按具体地址继续补充 WGS84 坐标；没有门牌或地理编码结果不匹配街道的记录不会被放到地图上。
+- **时效：**`source_checked_at` 表示目录采集/核对日期；`source_published_at` 表示来源网页发布日期（来源有明确日期时才填写）。公开 API 只显示最近两年内核对的记录。门店营业状态仍需电话或现场核验。
+
+主要公开来源包括：
+
+- [武汉市商务局：高端酒店外摆菜品与价格（2026-07-10）](https://sw.wuhan.gov.cn/xwdt/mtbd/202607/t20260710_2819054.shtml)
+- [武汉市商务局：湖锦酒楼北湖店、汉口喜来登等门店资料（2026-07-20）](https://sw.wuhan.gov.cn/xwdt/mtbd/202607/t20260720_2822721.shtml)
+- [武汉市商务局：武汉过早门店报道（2026-08-10）](https://sw.wuhan.gov.cn/xwdt/gzdt/202608/t20260810_2831553.shtml)
+- [武汉市商务局：海底捞大排档火锅滨江天街店及按盘价格（2026-01-02）](https://sw.wuhan.gov.cn/xwdt/mtbd/202601/t20260102_2705727.shtml)
+- [蔡林记官网门店列表](https://www.whclj.com/)
+- [Wikimedia Commons 蔡林记门店及菜品图片](https://commons.wikimedia.org/wiki/Category:Cai_Lin_Ji)
+
+更新 CSV 后，应用会根据文件 SHA 自动重新导入。若只想查看导入统计，可运行 `python3 import_wuhan_catalog.py`。后端仍只使用 Python 标准库；地理编码仅在显式运行 `--geocode` 时联网。
+
 ## API
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | /api/health | 服务健康检查 |
 | GET | /api/bootstrap | 商圈信息和 AI 配置状态 |
-| GET | /api/merchants | 搜索和筛选商家 |
+| GET | /api/merchants | 搜索和筛选演示商家 |
+| GET | /api/real-merchants | 搜索和筛选近两年公开来源的真实门店 |
+| GET | /api/real-merchants/coverage | 真实门店资料覆盖统计 |
+| GET | /api/real-merchants/{id} | 真实门店详情、图片授权和菜品价格 |
 | GET | /api/merchants/{id} | 商家详情、菜单和评价 |
 | GET | /api/reviews | 体验评价列表及统计 |
 | GET | /api/favorites | 当前访客收藏 ID 列表（兼容旧接口） |
@@ -90,7 +129,7 @@ nightfood-ai/
 
 ## 数据库与旧数据
 
-数据库默认保存在 data/night.db，可以通过 APP_DB 指定其他位置。首次启动会创建表并生成 4 个商圈、24 家演示商户和 72 道演示菜品。重复启动不会重复生成演示商户。
+数据库默认保存在 data/night.db，可以通过 APP_DB 指定其他位置。首次启动会创建表并生成 4 个商圈、24 家演示商户和 72 道演示菜品，同时按 CSV 校验值导入 55 条真实门店公开资料、图片和菜品记录。重复启动不会重复生成演示商户或重复导入相同版本的 CSV。
 
 从旧版本升级时，程序只对商家表增加简介、地址标签和数据来源说明字段，并新建建议表，不会主动删除旧的收藏、评价、问卷或推荐记录。升级前仍建议自行备份 data/night.db。
 
