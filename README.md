@@ -63,6 +63,12 @@ nightfood-ai/
 ├── services.py            # 偏好解析、推荐评分和 AI 助手
 ├── conversation.py        # 多轮偏好整理与追问建议
 ├── comparison.py          # 2–3 家商户的结构化对比
+├── real_catalog.py         # 真实商户、图片、菜品和两年时效规则
+├── import_wuhan_catalog.py # 55家武汉门店导入及可选地址地理编码
+├── data/
+│   ├── wuhan_restaurants.csv       # 门店地址、来源、菜系和人均参考价
+│   ├── wuhan_restaurant_images.csv # 图片链接、作者、拍摄日期和授权
+│   └── wuhan_menu_items.csv        # 招牌菜和有来源的单品价格
 ├── start.sh               # 本地启动脚本
 ├── .env.example           # 本地环境配置模板
 ├── static/
@@ -104,7 +110,10 @@ nightfood-ai/
 |---|---|---|
 | GET | /api/health | 服务健康检查 |
 | GET | /api/bootstrap | 商圈信息和 AI 配置状态 |
-| GET | /api/merchants | 搜索和筛选演示商家 |\n| GET | /api/real-merchants | 搜索和筛选近两年公开来源的真实门店 |\n| GET | /api/real-merchants/coverage | 真实门店资料覆盖统计 |\n| GET | /api/real-merchants/{id} | 真实门店详情、图片授权和菜品价格 |
+| GET | /api/merchants | 搜索和筛选演示商家 |
+| GET | /api/real-merchants | 搜索和筛选近两年公开来源的真实门店 |
+| GET | /api/real-merchants/coverage | 真实门店资料覆盖统计 |
+| GET | /api/real-merchants/{id} | 真实门店详情、图片授权和菜品价格 |
 | GET | /api/merchants/{id} | 商家详情、菜单和评价 |
 | GET | /api/reviews | 体验评价列表及统计 |
 | GET | /api/favorites | 当前访客收藏 ID 列表（兼容旧接口） |
@@ -120,7 +129,7 @@ nightfood-ai/
 
 ## 数据库与旧数据
 
-数据库默认保存在 data/night.db，可以通过 APP_DB 指定其他位置。首次启动会创建表并生成 4 个商圈、24 家演示商户和 72 道演示菜品。重复启动不会重复生成演示商户。
+数据库默认保存在 data/night.db，可以通过 APP_DB 指定其他位置。首次启动会创建表并生成 4 个商圈、24 家演示商户和 72 道演示菜品，同时按 CSV 校验值导入 55 条真实门店公开资料、图片和菜品记录。重复启动不会重复生成演示商户或重复导入相同版本的 CSV。
 
 从旧版本升级时，程序只对商家表增加简介、地址标签和数据来源说明字段，并新建建议表，不会主动删除旧的收藏、评价、问卷或推荐记录。升级前仍建议自行备份 data/night.db。
 
