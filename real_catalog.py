@@ -371,7 +371,7 @@ def get_public_real_merchant(connection, merchant_id):
         "CASE WHEN status='verified' THEN 'verified' "
         "WHEN source_name='OpenStreetMap' THEN 'community' ELSE 'web_listing' END AS data_quality "
         "FROM real_merchants WHERE id=? AND " + _public_filter(),
-        (merchant_id, boundary, boundary),
+        (merchant_id, boundary, boundary, boundary),
     ).fetchone()
     if row is None:
         return None
