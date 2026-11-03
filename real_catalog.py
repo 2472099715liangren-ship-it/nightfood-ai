@@ -61,6 +61,13 @@ def initialize_real_catalog(connection):
         CREATE INDEX IF NOT EXISTS idx_real_merchants_name
             ON real_merchants(name);
 
+        CREATE TABLE IF NOT EXISTS real_merchant_geocode_cache (
+            query TEXT PRIMARY KEY,
+            latitude REAL,
+            longitude REAL,
+            display_name TEXT NOT NULL DEFAULT '',
+            checked_at TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS real_merchant_menu_items (
             id INTEGER PRIMARY KEY,
             merchant_id INTEGER NOT NULL REFERENCES real_merchants(id) ON DELETE CASCADE,
