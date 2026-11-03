@@ -40,6 +40,8 @@ def initialize_real_catalog(connection):
             longitude REAL,
             phone TEXT,
             price_per_person INTEGER,
+            price_range_min INTEGER,
+            price_range_max INTEGER,
             opening_hours TEXT,
             source_name TEXT NOT NULL,
             source_url TEXT NOT NULL,
@@ -116,6 +118,8 @@ def initialize_real_catalog(connection):
         "source_published_at": "TEXT NOT NULL DEFAULT ''",
         "signature_dishes": "TEXT NOT NULL DEFAULT ''",
         "location_note": "TEXT NOT NULL DEFAULT ''",
+        "price_range_min": "INTEGER",
+        "price_range_max": "INTEGER",
     }
     for name, definition in merchant_migrations.items():
         if name not in columns:
@@ -192,6 +196,17 @@ def _validate(record):
         raise ValueError("人均价格必须为整数") from exc
     if item["price_per_person"] is not None and not 0 < item["price_per_person"] <= 2000:
         raise ValueError("人均价格超出允许范围")
+    for field in ("price_range_min", "price_range_max"):
+        raw_range = record.get(field)
+        try:
+            item[field] = int(raw_range) if raw_range not in ("", None) else None
+        except (TypeError, ValueError) as error:
+            raise ValueError(field + " 必须为整数") from error
+        if item[field] is not None and not 0 < item[field] <= 2000:
+            raise ValueError(field + " 超出允许范围")
+    if (item["price_range_min"] is not None and item["price_range_max"] is not None
+            and item["price_range_min"] > item["price_range_max"]):
+        raise ValueError("人均价格区间上下限不合法")
     status = _clean(record.get("status", "pending")) or "pending"
     if status not in VALID_STATUSES:
         raise ValueError("status 不合法")
@@ -226,20 +241,22 @@ def import_real_merchants(connection, records, dry_run=False):
         connection.execute("""
             INSERT INTO real_merchants (
                 external_id,name,district,address,cuisine,latitude,longitude,
-                phone,price_per_person,opening_hours,source_name,source_url,
-                verified_at,source_checked_at,source_published_at,signature_dishes,
-                location_note,verification_method,status
+                phone,price_per_person,price_range_min,price_range_max,
+                opening_hours,source_name,source_url,verified_at,source_checked_at,
+                source_published_at,signature_dishes,location_note,verification_method,status
             ) VALUES (
                 :external_id,:name,:district,:address,:cuisine,:latitude,:longitude,
-                :phone,:price_per_person,:opening_hours,:source_name,:source_url,
-                :verified_at,:source_checked_at,:source_published_at,:signature_dishes,
-                :location_note,:verification_method,:status
+                :phone,:price_per_person,:price_range_min,:price_range_max,
+                :opening_hours,:source_name,:source_url,:verified_at,:source_checked_at,
+                :source_published_at,:signature_dishes,:location_note,:verification_method,:status
             )
             ON CONFLICT(external_id) DO UPDATE SET
                 name=excluded.name, district=excluded.district,
                 address=excluded.address, cuisine=excluded.cuisine,
                 latitude=excluded.latitude, longitude=excluded.longitude,
                 phone=excluded.phone, price_per_person=excluded.price_per_person,
+                price_range_min=excluded.price_range_min,
+                price_range_max=excluded.price_range_max,
                 opening_hours=excluded.opening_hours, source_name=excluded.source_name,
                 source_url=excluded.source_url, verified_at=excluded.verified_at,
                 source_checked_at=excluded.source_checked_at,
@@ -315,7 +332,7 @@ def public_real_merchants(connection, district="", keyword="", limit=100, offset
     ).fetchone()[0]
     results = connection.execute(
         "SELECT id,name,district,address,cuisine,latitude,longitude,"
-        "phone,price_per_person,opening_hours,source_name,source_url,"
+        "phone,price_per_person,price_range_min,price_range_max,opening_hours,source_name,source_url,"
         "verified_at,source_checked_at,source_published_at,signature_dishes,location_note,"
         "verification_method,"
         "CASE WHEN status='verified' THEN 'verified' "
@@ -366,7 +383,7 @@ def get_public_real_merchant(connection, merchant_id):
     boundary = _fresh_cutoff()
     row = connection.execute(
         "SELECT id,name,district,address,cuisine,latitude,longitude,phone,"
-        "price_per_person,opening_hours,source_name,source_url,verified_at,"
+        "price_per_person,price_range_min,price_range_max,opening_hours,source_name,source_url,verified_at,"
         "source_checked_at,source_published_at,signature_dishes,location_note,"
         "CASE WHEN status='verified' THEN 'verified' "
         "WHEN source_name='OpenStreetMap' THEN 'community' ELSE 'web_listing' END AS data_quality "
