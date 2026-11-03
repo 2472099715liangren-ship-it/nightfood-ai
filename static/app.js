@@ -365,7 +365,7 @@
     const params = new URLSearchParams({limit: "50", offset: String(page * 50)});
     if (district) params.set("district", district);
     if (keyword) params.set("keyword", keyword);
-    container.innerHTML = '<p class="feature-description">正在查询开放地图商家…</p>';
+    container.innerHTML = '<p class="feature-description">正在查询武汉真实商家…</p>';
     try {
       const [result, coverage] = await Promise.all([
         request("/api/real-merchants?" + params.toString()),
@@ -406,8 +406,8 @@
           merchant.id + '">查看菜单与图片 →</button>' +
           '<a href="' + escapeHtml(merchant.source_url) +
           '" target="_blank" rel="noopener noreferrer">资料来源 ↗</a></div></article>';
-      }).join("") : '<div class="saved-empty"><h2>当前没有符合两年期限的真实商户资料</h2>' +
-        '<p>未记录有效核查日期的 OSM 候选继续保存在数据库待复核，不能直接当作近两年有效资料展示。</p></div>';
+      }).join("") : '<div class="saved-empty"><h2>没有找到符合条件的真实商家</h2>' +
+        '<p>可尝试清空行政区或关键词筛选。来源日期不符合近两年要求的资料不会公开。</p></div>';
       updateRealMapView();
       if (result.total > 50) {
         container.insertAdjacentHTML("beforeend",
