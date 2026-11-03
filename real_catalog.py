@@ -1,15 +1,16 @@
-"""Verified-real-merchant catalog, separate from demonstration merchants.
+"""Real Wuhan merchant catalog, separate from demonstration merchants.
 
-Only explicitly verified records are public. Import is an offline CLI workflow,
-not an unauthenticated HTTP endpoint. Source attribution and review timestamps
-are mandatory for every published record.
+Public web listings are attributed and marked unverified until checked in person.
+Only recent source records are shown; prices and images retain their own sources.
 """
 import csv
 import datetime as dt
+import hashlib
 import json
 import re
 import sqlite3
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from database import connect
 
@@ -61,6 +62,11 @@ def initialize_real_catalog(connection):
         CREATE INDEX IF NOT EXISTS idx_real_merchants_name
             ON real_merchants(name);
 
+        CREATE TABLE IF NOT EXISTS real_catalog_seed_state (
+            file_name TEXT PRIMARY KEY,
+            sha256 TEXT NOT NULL,
+            imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
         CREATE TABLE IF NOT EXISTS real_merchant_geocode_cache (
             query TEXT PRIMARY KEY,
             latitude REAL,
@@ -237,8 +243,8 @@ def import_real_merchants(connection, records, dry_run=False):
     if dry_run:
         return {"validated": len(prepared), "written": 0}
     for item in prepared:
-        # Do not downgrade independently verified records when refreshing OSM.
-        if item["source_name"] == "OpenStreetMap" and item["status"] == "pending":
+        # A refresh must never undo a manual verification.
+        if item["status"] == "pending":
             existing = connection.execute(
                 "SELECT status FROM real_merchants WHERE external_id=?",
                 (item["external_id"],),
@@ -480,3 +486,138 @@ def catalog_coverage(connection):
         "districts": [{"name": key, "verified_count": value} for key, value in counts.items()],
         "notice": "公开网页目录按本次采集/核对日期筛选，不等于营业状态已人工确认；人均价仅供参考，单品价以门店菜单为准。未记录 OSM 逐店调查日期的候选不会公开。",
     }
+
+
+def seed_bundled_catalog(connection, data_dir=None):
+    """Load the checked-in Wuhan CSV files once, then only when a file changes."""
+    data_dir = Path(data_dir) if data_dir else Path(__file__).resolve().parent / "data"
+    files = {
+        "wuhan_restaurants.csv": "merchants",
+        "wuhan_menu_items.csv": "menu",
+        "wuhan_restaurant_images.csv": "images",
+    }
+    totals = {"merchants": 0, "menu_items": 0, "images": 0}
+    for file_name, kind in files.items():
+        path = data_dir / file_name
+        if not path.is_file():
+            continue
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        saved = connection.execute(
+            "SELECT sha256 FROM real_catalog_seed_state WHERE file_name=?",
+            (file_name,),
+        ).fetchone()
+        if saved and saved["sha256"] == digest:
+            continue
+
+        records = read_import_file(path)
+        if kind == "merchants":
+            totals["merchants"] = import_real_merchants(connection, records)["written"]
+        elif kind == "menu":
+            for item in records:
+                merchant = connection.execute(
+                    "SELECT id FROM real_merchants WHERE external_id=?",
+                    (_clean(item.get("external_id")),),
+                ).fetchone()
+                if merchant is None:
+                    continue
+                raw_price = _clean(item.get("price"), 30)
+                try:
+                    price = float(raw_price) if raw_price else None
+                except ValueError as error:
+                    raise ValueError("菜品价格必须为数字") from error
+                if price is not None and not 0 < price <= 10000:
+                    raise ValueError("菜品价格超出允许范围")
+                checked_at = _clean(item.get("price_checked_at"), 10)
+                if checked_at:
+                    try:
+                        checked = dt.date.fromisoformat(checked_at)
+                    except ValueError as error:
+                        raise ValueError("菜品价格核查日期必须为 YYYY-MM-DD") from error
+                    if checked > dt.date.today() or checked.isoformat() < _fresh_cutoff():
+                        raise ValueError("菜品价格资料必须在最近两年内")
+                source_url = _clean(item.get("price_source_url"), 1000)
+                if not re.match(r"^https://[^\s/]+\.[^\s/]+", source_url):
+                    raise ValueError("菜品价格必须附带 HTTPS 来源")
+                connection.execute(
+                    """
+                    INSERT INTO real_merchant_menu_items(
+                        merchant_id,dish_name,price,price_unit,price_source_url,
+                        price_checked_at,price_note
+                    ) VALUES (?,?,?,?,?,?,?)
+                    ON CONFLICT(merchant_id,dish_name) DO UPDATE SET
+                        price=excluded.price,price_unit=excluded.price_unit,
+                        price_source_url=excluded.price_source_url,
+                        price_checked_at=excluded.price_checked_at,
+                        price_note=excluded.price_note
+                    """,
+                    (
+                        merchant["id"], _clean(item.get("dish_name"), 100),
+                        price, _clean(item.get("price_unit"), 30) or "元/份",
+                        source_url, checked_at, _clean(item.get("price_note"), 300),
+                    ),
+                )
+                totals["menu_items"] += 1
+        else:
+            allowed_hosts = {"thumb.wikimedia.org", "upload.wikimedia.org", "commons.wikimedia.org"}
+            allowed_licenses = {"CC BY 4.0", "CC BY-SA 4.0", "CC0 1.0"}
+            for item in records:
+                merchant = connection.execute(
+                    "SELECT id FROM real_merchants WHERE external_id=?",
+                    (_clean(item.get("external_id")),),
+                ).fetchone()
+                if merchant is None:
+                    continue
+                image_url = _clean(item.get("image_url"), 1500)
+                source_url = _clean(item.get("source_url"), 1500)
+                license_url = _clean(item.get("license_url"), 500)
+                image_host = urlsplit(image_url).hostname
+                if urlsplit(image_url).scheme != "https" or image_host not in allowed_hosts:
+                    raise ValueError("图片必须来自已审核的 Wikimedia 图片域名")
+                if not source_url.startswith("https://commons.wikimedia.org/wiki/File:"):
+                    raise ValueError("图片必须附带 Wikimedia 原始文件页")
+                license_name = _clean(item.get("license"), 40)
+                if license_name not in allowed_licenses or not license_url.startswith("https://creativecommons.org/"):
+                    raise ValueError("图片授权信息不完整或不受支持")
+                taken_at = _clean(item.get("taken_at"), 10)
+                try:
+                    taken = dt.date.fromisoformat(taken_at)
+                except ValueError as error:
+                    raise ValueError("图片拍摄日期必须为 YYYY-MM-DD") from error
+                if taken > dt.date.today() or taken.isoformat() < _fresh_cutoff():
+                    raise ValueError("图片拍摄日期必须在最近两年内")
+                image_type = _clean(item.get("image_type"), 30)
+                if image_type not in ("storefront", "dish", "dish_reference"):
+                    raise ValueError("图片类型不合法")
+                if not _clean(item.get("author"), 100):
+                    raise ValueError("图片必须注明作者")
+                connection.execute(
+                    """
+                    INSERT INTO real_merchant_images(
+                        merchant_id,image_url,image_type,caption,taken_at,
+                        author,license,license_url,source_url
+                    ) VALUES (?,?,?,?,?,?,?,?,?)
+                    ON CONFLICT(merchant_id,image_url) DO UPDATE SET
+                        image_type=excluded.image_type,caption=excluded.caption,
+                        taken_at=excluded.taken_at,author=excluded.author,
+                        license=excluded.license,license_url=excluded.license_url,
+                        source_url=excluded.source_url
+                    """,
+                    (
+                        merchant["id"], image_url, image_type,
+                        _clean(item.get("caption"), 240), taken_at,
+                        _clean(item.get("author"), 100), license_name,
+                        license_url, source_url,
+                    ),
+                )
+                totals["images"] += 1
+
+        connection.execute(
+            """
+            INSERT INTO real_catalog_seed_state(file_name,sha256)
+            VALUES (?,?)
+            ON CONFLICT(file_name) DO UPDATE SET
+                sha256=excluded.sha256, imported_at=CURRENT_TIMESTAMP
+            """,
+            (file_name, digest),
+        )
+    return totals
