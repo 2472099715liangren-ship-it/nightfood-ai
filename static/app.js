@@ -533,22 +533,23 @@
       "</form>" +
       '<section class="real-catalog-panel"><div class="real-catalog-title"><div>' +
         '<span class="eyebrow">REAL WUHAN DIRECTORY</span><h2>武汉真实商家资料</h2>' +
-        '<p>当前收录55家武汉门店，资料在近两年内采集/核对；网页收录不等于营业状态已人工核验。菜品价格只展示有来源的单价，其余明确标注待核。</p>' +
+        '<p>当前收录55家武汉门店（目前集中在5个区），资料在近两年内采集/核对；网页收录不等于营业状态已人工核验。菜品价格只展示有来源的单价，其余明确标注待核。</p>' +
         '</div><span id="real-coverage-count">统计中…</span></div>' +
         '<form id="real-search" class="real-search"><input id="real-keyword" placeholder="查找真实店名或地址" maxlength="80">' +
         '<select id="real-district"><option value="">武汉全市</option>' +
         selectOptions(["江岸区","江汉区","硚口区","汉阳区","武昌区","青山区",
           "洪山区","东西湖区","蔡甸区","江夏区","黄陂区","新洲区","汉南区"], "") +
         '</select><button class="button-primary">搜索</button></form>' +
-        '<p class="real-license">公开地图资料 © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors · ODbL</a>。地址、营业和价格请在出发前核实；地图未录入不代表没有这家店。</p>' +
+        '<p class="real-license">地图底图与地址定位 © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors · ODbL</a>。商家资料另附各自来源；地址、营业和价格请在出发前核实。</p>' +
         '<div class="real-map-actions" role="group" aria-label="真实商家显示方式">' +
           '<button type="button" class="soft-action is-active" data-osm-view="list" aria-pressed="true">☷ 列表</button>' +
           '<button type="button" class="soft-action" data-osm-view="map" aria-pressed="false">⌖ 地图</button>' +
           '<span id="real-map-status">只标注有WGS84坐标的门店；未定位门店仍保留在列表</span></div>' +
         '<div id="real-catalog-results"></div>' +
         '<div id="real-osm-map-panel" hidden><div id="real-osm-map" class="real-osm-map" role="region" aria-label="武汉真实门店分布图"></div>' +
-          '<div class="real-map-legend"><span><i class="verified-dot"></i>近两年人工核验</span>' +
-          '<span><i class="community-dot"></i>近两年 OSM 社区核查，营业状态未核实</span></div>' +
+          '<div class="real-map-legend"><span><i class="verified-dot"></i>人工核验</span>' +
+          '<span><i class="community-dot"></i>OSM社区收录</span>' +
+          '<span><i class="web-listing-dot"></i>网页收录，营业状态未核</span></div>' +
           '<p class="real-map-caption">地图只标注当前筛选页内有WGS84坐标的门店；没有可靠坐标的记录仍显示在列表中，不会猜测地图位置。地图瓦片仅供低流量预览。</p></div></section>' +
       '<div class="directory-toolbar"><span id="merchant-count">正在整理演示商家…</span>' +
         '<span>资料均为研究演示内容</span></div>' +
