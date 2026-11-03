@@ -312,7 +312,7 @@ def _public_filter():
 
 
 def public_real_merchants(connection, district="", keyword="", limit=100, offset=0):
-    """Expose independently verified or attributed OSM community entries only."""
+    """Expose recent, attributed merchant listings; distinguish verification status."""
     limit = max(1, min(int(limit), 100))
     offset = max(0, int(offset))
     conditions = [_public_filter()]
@@ -348,7 +348,7 @@ def public_real_merchants(connection, district="", keyword="", limit=100, offset
         "(SELECT p.copyright_holder FROM real_merchant_photos AS p "
         " WHERE p.merchant_id=real_merchants.id AND p.status='verified' "
         " AND p.permission_confirmed=1 AND p.taken_at >= ? "
-        " AND substr(p.verified_at,1,10) >= ? ORDER BY p.id LIMIT 1) AS photo_copyright_holder "
+        " AND substr(p.verified_at,1,10) >= ? ORDER BY p.id LIMIT 1) AS photo_copyright_holder, "
         "(SELECT i.image_url FROM real_merchant_images AS i "
         " WHERE i.merchant_id=real_merchants.id ORDER BY "
         "CASE i.image_type WHEN 'storefront' THEN 0 WHEN 'dish' THEN 1 ELSE 2 END,i.id LIMIT 1) AS cover_image_url, "
@@ -357,7 +357,22 @@ def public_real_merchants(connection, district="", keyword="", limit=100, offset
         "CASE i.image_type WHEN 'storefront' THEN 0 WHEN 'dish' THEN 1 ELSE 2 END,i.id LIMIT 1) AS cover_image_type, "
         "(SELECT i.caption FROM real_merchant_images AS i "
         " WHERE i.merchant_id=real_merchants.id ORDER BY "
-        "CASE i.image_type WHEN 'storefront' THEN 0 WHEN 'dish' THEN 1 ELSE 2 END,i.id LIMIT 1) AS cover_image_caption "
+        "CASE i.image_type WHEN 'storefront' THEN 0 WHEN 'dish' THEN 1 ELSE 2 END,i.id LIMIT 1) AS cover_image_caption, "
+        "(SELECT i.author FROM real_merchant_images AS i "
+        " WHERE i.merchant_id=real_merchants.id ORDER BY "
+        "CASE i.image_type WHEN 'storefront' THEN 0 WHEN 'dish' THEN 1 ELSE 2 END,i.id LIMIT 1) AS cover_image_author, "
+        "(SELECT i.license FROM real_merchant_images AS i "
+        " WHERE i.merchant_id=real_merchants.id ORDER BY "
+        "CASE i.image_type WHEN 'storefront' THEN 0 WHEN 'dish' THEN 1 ELSE 2 END,i.id LIMIT 1) AS cover_image_license, "
+        "(SELECT i.license_url FROM real_merchant_images AS i "
+        " WHERE i.merchant_id=real_merchants.id ORDER BY "
+        "CASE i.image_type WHEN 'storefront' THEN 0 WHEN 'dish' THEN 1 ELSE 2 END,i.id LIMIT 1) AS cover_image_license_url, "
+        "(SELECT i.source_url FROM real_merchant_images AS i "
+        " WHERE i.merchant_id=real_merchants.id ORDER BY "
+        "CASE i.image_type WHEN 'storefront' THEN 0 WHEN 'dish' THEN 1 ELSE 2 END,i.id LIMIT 1) AS cover_image_source_url, "
+        "(SELECT i.taken_at FROM real_merchant_images AS i "
+        " WHERE i.merchant_id=real_merchants.id ORDER BY "
+        "CASE i.image_type WHEN 'storefront' THEN 0 WHEN 'dish' THEN 1 ELSE 2 END,i.id LIMIT 1) AS cover_image_taken_at "
         "FROM real_merchants WHERE " + where + " ORDER BY updated_at DESC,id DESC "
         "LIMIT ? OFFSET ?", (
             [_fresh_cutoff(), _fresh_cutoff()] * 3
@@ -373,7 +388,7 @@ def public_real_merchants(connection, district="", keyword="", limit=100, offset
     return {
         "items": items,
         "total": total,
-        "notice": "OSM 社区收录不代表已人工核实；营业状态和地址请向商家确认。",
+        "notice": "公开网页收录不代表营业状态已人工核实；人均参考价与菜单价格可能变化，出行前请向商家确认。",
         "license": "© OpenStreetMap contributors · ODbL (www.openstreetmap.org/copyright)",
     }
 
