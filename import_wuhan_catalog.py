@@ -14,7 +14,7 @@ from urllib.request import Request, urlopen
 from database import connect, initialize_database
 from real_catalog import seed_bundled_catalog
 
-WUHAN_VIEWBOX = "114.85,31.05,113.65,30.15"
+WUHAN_VIEWBOX = "113.65,31.05,114.85,30.15"
 USER_AGENT = "NightFind-WuhanCatalog/1.0 (+https://github.com/2472099715liangren-ship-it/nightfood-ai)"
 
 
