@@ -52,21 +52,26 @@ window.NightFindWuhanMap = (function () {
       if (lat < 29.8 || lat > 31.5 || lng < 113.5 || lng > 115.2) return;
 
       const verified = restaurant.data_quality === "verified";
+      const community = restaurant.data_quality === "community";
       const marker = L.circleMarker([lat, lng], {
         radius: 9,
-        color: verified ? "#3f6a49" : "#718a9c",
-        fillColor: verified ? "#80a97e" : "#a9c1d0",
+        color: verified ? "#3f6a49" : community ? "#718a9c" : "#9b8058",
+        fillColor: verified ? "#80a97e" : community ? "#a9c1d0" : "#d8c39b",
         fillOpacity: 0.92,
         weight: 2
       }).addTo(markerLayer);
-      const price = restaurant.price_per_person == null
-        ? "人均待核实" : "人均约 ¥" + restaurant.price_per_person;
-      const quality = verified ? "人工核验通过" : "OSM 社区收录 · 营业状态未核实";
+      const price = restaurant.price_per_person != null
+        ? "人均约 ¥" + restaurant.price_per_person
+        : restaurant.price_range_min != null && restaurant.price_range_max != null
+          ? "参考价 ¥" + restaurant.price_range_min + "–" + restaurant.price_range_max
+          : "价格待核实";
+      const quality = verified ? "人工核验通过" :
+        community ? "OSM 社区收录 · 营业状态未核实" : "网页收录 · 营业状态未人工核实";
       marker.bindPopup(
         '<div class="real-map-popup"><strong>' + escapeHtml(restaurant.name) +
         '</strong><p>' + escapeHtml(restaurant.district) + " · " +
         escapeHtml(restaurant.address) + '</p><span class="real-map-quality ' +
-        (verified ? "verified" : "community") + '">' + escapeHtml(quality) +
+        (verified ? "verified" : community ? "community" : "web-listing") + '">' + escapeHtml(quality) +
         '</span><p>' + escapeHtml(price) + " · 来源核查 " +
         escapeHtml(restaurant.source_checked_at || "未记录") +
         '</p><button type="button" data-real-merchant="' +
