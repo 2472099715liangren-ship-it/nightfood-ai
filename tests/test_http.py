@@ -19,7 +19,7 @@ class HttpApiTests(unittest.TestCase):
         self.original_api_key = os.environ.get("OPENAI_API_KEY")
         database.DB_PATH = Path(self.temp_dir.name) / "http-test.db"
         os.environ["OPENAI_API_KEY"] = ""
-        database.initialize_database(import_snapshot=False)
+        database.initialize_database(import_snapshot=False, import_bundled_catalog=False)
 
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), NightFindHandler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
