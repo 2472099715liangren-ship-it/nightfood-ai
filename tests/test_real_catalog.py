@@ -33,7 +33,7 @@ class RealCatalogTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.old_path = database.DB_PATH
         database.DB_PATH = Path(self.tmp.name) / "catalog.db"
-        database.initialize_database(import_snapshot=False)
+        database.initialize_database(import_snapshot=False, import_bundled_catalog=False)
 
     def tearDown(self):
         database.DB_PATH = self.old_path
