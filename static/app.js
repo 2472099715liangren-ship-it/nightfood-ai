@@ -372,30 +372,40 @@
         request("/api/real-merchants/coverage")
       ]);
       const count = document.getElementById("real-coverage-count");
-      if (count) count.textContent = "OSM 候选 " + (coverage.candidate_total || 0) +
-        " 家 · 近两年资料 " + ((coverage.community_total || 0) + coverage.verified_total) + " 家";
+      if (count) count.textContent = "网页收录 " + (coverage.web_listing_total || 0) +
+        " 家 · 人工核验 " + (coverage.verified_total || 0) +
+        " 家 · OSM 社区 " + (coverage.community_total || 0) + " 家";
       realMapItems = result.items || [];
       container.innerHTML = result.items.length ? result.items.map(function (merchant) {
         const verified = merchant.data_quality === "verified";
-        const photo = merchant.photo_url
+        const photo = merchant.cover_image_url
           ? '<figure class="real-shop-photo-figure"><img class="real-shop-photo" loading="lazy" alt="' +
-            escapeHtml(merchant.name) + '经审核的店面照片" src="' +
-            escapeHtml(merchant.photo_url) + '"><figcaption>拍摄于 ' +
-            escapeHtml(merchant.photo_taken_at || "日期待确认") + ' · 图片权利人：' +
-            escapeHtml(merchant.photo_copyright_holder || "未注明") + '</figcaption></figure>'
-          : '<div class="real-shop-photo-placeholder">📷 暂无已授权并审核的店面照片</div>';
+            escapeHtml(merchant.name) + '菜品参考图" src="' +
+            escapeHtml(merchant.cover_image_url) + '"><figcaption>' +
+            escapeHtml(merchant.cover_image_caption || "图片参考") + ' · ' +
+            escapeHtml(merchant.cover_image_author || "作者未注明") + ' · ' +
+            escapeHtml(merchant.cover_image_license || "") +
+            '</figcaption></figure>'
+          : '<div class="real-shop-photo-placeholder">📷 暂无可展示图片</div>';
+        const price = merchant.price_per_person != null
+          ? "人均约 ¥" + merchant.price_per_person
+          : merchant.price_range_min != null && merchant.price_range_max != null
+            ? "参考价 ¥" + merchant.price_range_min + "–" + merchant.price_range_max
+            : "人均价格待核";
+        const quality = verified ? "人工核验" :
+          merchant.data_quality === "community" ? "OSM社区收录" : "网页收录 · 营业状态未核";
+        const dishes = (merchant.signature_dishes || "").split(";").filter(Boolean).join("、");
         return '<article class="real-shop">' + photo +
           '<div class="real-shop-main"><strong>' + escapeHtml(merchant.name) +
           '</strong><p>' + escapeHtml(merchant.district) + " · " + escapeHtml(merchant.address) +
-          '</p><small>' + escapeHtml(merchant.cuisine) +
-          (merchant.price_per_person ? " · 人均约 ¥" + merchant.price_per_person : " · 价格未提供") +
-          '</small></div><div class="real-shop-meta"><span>' +
-          (verified ? "人工核验 · " + escapeHtml(merchant.verified_at || "") :
-            "社区核查日期 " + escapeHtml(merchant.source_checked_at || "未记录")) +
-          '</span><button type="button" class="quiet-link" data-real-merchant="' +
-          merchant.id + '">查看资料 →</button>' +
+          '</p><small>' + escapeHtml(merchant.cuisine) + " · " + escapeHtml(price) +
+          '</small>' + (dishes ? '<p class="real-shop-dishes">招牌：' + escapeHtml(dishes) + '</p>' : '') +
+          '</div><div class="real-shop-meta"><span>' + escapeHtml(quality) +
+          '</span><small>资料核对 ' + escapeHtml(merchant.source_checked_at || "未记录") +
+          '</small><button type="button" class="quiet-link" data-real-merchant="' +
+          merchant.id + '">查看菜单与图片 →</button>' +
           '<a href="' + escapeHtml(merchant.source_url) +
-          '" target="_blank" rel="noopener noreferrer">OSM 来源 ↗</a></div></article>';
+          '" target="_blank" rel="noopener noreferrer">资料来源 ↗</a></div></article>';
       }).join("") : '<div class="saved-empty"><h2>当前没有符合两年期限的真实商户资料</h2>' +
         '<p>未记录有效核查日期的 OSM 候选继续保存在数据库待复核，不能直接当作近两年有效资料展示。</p></div>';
       updateRealMapView();
@@ -443,29 +453,59 @@
   async function showRealMerchant(merchantId) {
     try {
       const merchant = await request("/api/real-merchants/" + merchantId);
-      const gallery = (merchant.photos || []).map(function (photo) {
+      const gallery = (merchant.images || []).map(function (photo) {
         return '<figure class="real-shop-gallery-item"><img loading="lazy" alt="' +
-          escapeHtml(merchant.name) + '店面照片" src="' +
-          escapeHtml(photo.photo_url) + '"><figcaption>拍摄于 ' +
-          escapeHtml(photo.taken_at) + ' · ' +
-          escapeHtml(photo.copyright_holder) + '</figcaption></figure>';
+          escapeHtml(merchant.name) + '菜品参考图片" src="' +
+          escapeHtml(photo.image_url) + '"><figcaption>' +
+          escapeHtml(photo.caption || "图片参考") + ' · 拍摄 ' +
+          escapeHtml(photo.taken_at) + ' · ' + escapeHtml(photo.author) +
+          ' · ' + escapeHtml(photo.license) +
+          ' · <a target="_blank" rel="noopener noreferrer" href="' +
+          escapeHtml(photo.source_url) + '">图片来源</a></figcaption></figure>';
       }).join("");
+      const menu = (merchant.menu_items || []).map(function (item) {
+        const price = item.price == null ? "未找到可靠公开单价" :
+          "¥" + Number(item.price).toFixed(Number(item.price) % 1 ? 1 : 0) +
+          (item.price_unit ? " / " + escapeHtml(item.price_unit) : "");
+        return '<li><div><strong>' + escapeHtml(item.dish_name) +
+          '</strong><span>' + price + '</span></div>' +
+          (item.price_note ? '<small>' + escapeHtml(item.price_note) + '</small>' : '') +
+          '<small>价格来源：<a target="_blank" rel="noopener noreferrer" href="' +
+          escapeHtml(item.price_source_url) + '">' + escapeHtml(item.price_checked_at || "日期待确认") +
+          '</a></small></li>';
+      }).join("");
+      const verified = merchant.data_quality === "verified";
+      const quality = verified ? "人工核验通过" :
+        merchant.data_quality === "community" ? "OSM社区收录，营业状态未核验" :
+          "公开网页收录，营业状态未人工核验";
+      const price = merchant.price_per_person != null
+        ? "人均约 ¥" + merchant.price_per_person
+        : merchant.price_range_min != null && merchant.price_range_max != null
+          ? "参考价格 ¥" + merchant.price_range_min + "–" + merchant.price_range_max
+          : "人均价格未知";
       detail.innerHTML =
-        '<span class="eyebrow">RECENT WUHAN MERCHANT</span><h2>' +
+        '<span class="eyebrow">WUHAN MERCHANT DIRECTORY</span><h2>' +
           escapeHtml(merchant.name) + '</h2>' +
         '<div class="real-shop-gallery">' +
-          (gallery || '<p class="real-photo-empty">📷 暂无可合法展示的近两年店面照片</p>') +
+          (gallery || '<p class="real-photo-empty">暂无可合法展示的近两年图片</p>') +
         '</div>' +
         '<p class="detail-description">' + escapeHtml(merchant.district) + ' · ' +
           escapeHtml(merchant.address) + '</p>' +
-        '<p class="detail-description">' + escapeHtml(merchant.cuisine) +
-          (merchant.price_per_person == null ? ' · 人均价格未知' :
-            ' · 人均约 ¥' + merchant.price_per_person) + '</p>' +
-        '<p class="detail-description">资料核查：' +
-          escapeHtml(merchant.source_checked_at || '无') +
-          (merchant.data_quality === "verified" ? ' · 门店已人工核验' : ' · OSM 社区记录，未独立核验营业状态') +
-          '</p><p class="real-license">资料来源：<a target="_blank" rel="noopener noreferrer" href="' +
-          escapeHtml(merchant.source_url) + '">OpenStreetMap / 数据来源 ↗</a></p>';
+        '<p class="detail-description">' + escapeHtml(merchant.cuisine) + ' · ' +
+          escapeHtml(price) + '</p>' +
+        (merchant.signature_dishes ? '<p class="detail-description">招牌菜：' +
+          escapeHtml(merchant.signature_dishes.split(";").join("、")) + '</p>' : '') +
+        (merchant.menu_items && merchant.menu_items.length ? '<h3>菜品与价格</h3><ul class="real-menu-list">' +
+          menu + '</ul>' : '<p class="detail-description">暂未找到可核实的公开单品价格。</p>') +
+        '<p class="detail-description">资料核对：' +
+          escapeHtml(merchant.source_checked_at || '无') + ' · ' + escapeHtml(quality) +
+          (merchant.source_published_at ? ' · 来源发布日期 ' + escapeHtml(merchant.source_published_at) : '') +
+          '</p>' +
+        (merchant.location_note ? '<p class="detail-description">定位说明：' +
+          escapeHtml(merchant.location_note) + '</p>' : '') +
+        '<p class="real-license">商家资料来源：<a target="_blank" rel="noopener noreferrer" href="' +
+          escapeHtml(merchant.source_url) + '">' + escapeHtml(merchant.source_name) +
+          ' ↗</a></p>';
       dialog.showModal();
     } catch (error) {
       showToast(error.message);
@@ -493,7 +533,7 @@
       "</form>" +
       '<section class="real-catalog-panel"><div class="real-catalog-title"><div>' +
         '<span class="eyebrow">REAL WUHAN DIRECTORY</span><h2>武汉真实商家资料</h2>' +
-        '<p>仅公开最近两年内有逐店核查日期的资料；社区地图候选不等于已核验营业的餐厅。下面的演示数据单独显示。</p>' +
+        '<p>当前收录55家武汉门店，资料在近两年内采集/核对；网页收录不等于营业状态已人工核验。菜品价格只展示有来源的单价，其余明确标注待核。</p>' +
         '</div><span id="real-coverage-count">统计中…</span></div>' +
         '<form id="real-search" class="real-search"><input id="real-keyword" placeholder="查找真实店名或地址" maxlength="80">' +
         '<select id="real-district"><option value="">武汉全市</option>' +
@@ -504,12 +544,12 @@
         '<div class="real-map-actions" role="group" aria-label="真实商家显示方式">' +
           '<button type="button" class="soft-action is-active" data-osm-view="list" aria-pressed="true">☷ 列表</button>' +
           '<button type="button" class="soft-action" data-osm-view="map" aria-pressed="false">⌖ 地图</button>' +
-          '<span id="real-map-status">只展示近两年有核查依据的门店点位</span></div>' +
+          '<span id="real-map-status">只标注有WGS84坐标的门店；未定位门店仍保留在列表</span></div>' +
         '<div id="real-catalog-results"></div>' +
         '<div id="real-osm-map-panel" hidden><div id="real-osm-map" class="real-osm-map" role="region" aria-label="武汉真实门店分布图"></div>' +
           '<div class="real-map-legend"><span><i class="verified-dot"></i>近两年人工核验</span>' +
           '<span><i class="community-dot"></i>近两年 OSM 社区核查，营业状态未核实</span></div>' +
-          '<p class="real-map-caption">地图只标注当前筛选页内、具有有效核查日期和坐标的门店。地图瓦片仅供低流量预览。</p></div></section>' +
+          '<p class="real-map-caption">地图只标注当前筛选页内有WGS84坐标的门店；没有可靠坐标的记录仍显示在列表中，不会猜测地图位置。地图瓦片仅供低流量预览。</p></div></section>' +
       '<div class="directory-toolbar"><span id="merchant-count">正在整理演示商家…</span>' +
         '<span>资料均为研究演示内容</span></div>' +
       '<div id="merchant-grid" class="merchant-grid"></div>';
