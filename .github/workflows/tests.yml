@@ -5,11 +5,13 @@ on:
     branches:
       - "redesign/**"
       - "feature/**"
+      - "fix/**"
   pull_request:
     branches:
       - main
       - "redesign/**"
       - "feature/**"
+      - "fix/**"
 
 jobs:
   test:
