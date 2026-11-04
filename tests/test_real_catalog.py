@@ -143,6 +143,19 @@ class RealCatalogTests(unittest.TestCase):
             self.assertAlmostEqual(item["latitude"], 30.60)
             self.assertAlmostEqual(item["longitude"], 114.31)
 
+    def test_rejects_half_filled_coordinates(self):
+        incomplete = record("web:wuhan-incomplete", status="pending")
+        incomplete["latitude"] = "30.59"
+        incomplete["longitude"] = ""
+
+        with database.connect() as connection:
+            with self.assertRaisesRegex(ValueError, "纬度和经度必须"):
+                import_real_merchants(connection, [incomplete])
+            self.assertIsNone(connection.execute(
+                "SELECT id FROM real_merchants WHERE external_id=?",
+                ("web:wuhan-incomplete",),
+            ).fetchone())
+
     def test_upsert_is_idempotent(self):
         with database.connect() as connection:
             import_real_merchants(connection, [record()])
