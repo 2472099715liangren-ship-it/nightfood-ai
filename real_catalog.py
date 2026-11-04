@@ -202,6 +202,11 @@ def _validate(record):
             if not low <= val <= high:
                 raise ValueError(field + " 超出合法范围")
             item[field] = val
+    # A coordinate is a WGS84 latitude/longitude pair. A half-filled
+    # pair would otherwise combine an imported value with a stale value
+    # during UPSERT, producing a location that was never verified.
+    if (item["latitude"] is None) != (item["longitude"] is None):
+        raise ValueError("纬度和经度必须同时填写或同时留空")
     raw_price = record.get("price_per_person")
     try:
         item["price_per_person"] = int(raw_price) if raw_price not in ("", None) else None
@@ -266,16 +271,23 @@ def import_real_merchants(connection, records, dry_run=False):
             ON CONFLICT(external_id) DO UPDATE SET
                 name=excluded.name, district=excluded.district,
                 address=excluded.address, cuisine=excluded.cuisine,
-                latitude=excluded.latitude, longitude=excluded.longitude,
-                phone=excluded.phone, price_per_person=excluded.price_per_person,
+                -- A CSV refresh must not erase coordinates added by a later
+                -- address geocoding or manual review. Explicit new coordinates
+                -- are allowed to replace existing values.
+                latitude=COALESCE(excluded.latitude, real_merchants.latitude),
+                longitude=COALESCE(excluded.longitude, real_merchants.longitude),
+                phone=COALESCE(excluded.phone, real_merchants.phone),
+                price_per_person=COALESCE(excluded.price_per_person, real_merchants.price_per_person),
                 price_range_min=excluded.price_range_min,
                 price_range_max=excluded.price_range_max,
-                opening_hours=excluded.opening_hours, source_name=excluded.source_name,
+                opening_hours=COALESCE(excluded.opening_hours, real_merchants.opening_hours),
+                source_name=excluded.source_name,
                 source_url=excluded.source_url, verified_at=excluded.verified_at,
                 source_checked_at=excluded.source_checked_at,
                 source_published_at=excluded.source_published_at,
                 signature_dishes=excluded.signature_dishes,
-                location_note=excluded.location_note,
+                location_note=CASE WHEN excluded.location_note = ''
+                    THEN real_merchants.location_note ELSE excluded.location_note END,
                 verification_method=excluded.verification_method,
                 status=excluded.status, updated_at=CURRENT_TIMESTAMP
         """, item)

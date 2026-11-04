@@ -87,6 +87,75 @@ class RealCatalogTests(unittest.TestCase):
             import_real_merchants(connection, [record("pending-1", "pending")])
             self.assertEqual(public_real_merchants(connection)["total"], 0)
 
+    def test_pending_csv_refresh_preserves_enriched_fields(self):
+        """Partial CSV rows must not erase values enriched after import."""
+        initial = record("web:wuhan-local", status="pending")
+        initial["latitude"] = ""
+        initial["longitude"] = ""
+        initial["location_note"] = ""
+        initial["phone"] = ""
+        initial["opening_hours"] = ""
+        initial["price_per_person"] = ""
+
+        with database.connect() as connection:
+            import_real_merchants(connection, [initial])
+            connection.execute(
+                """UPDATE real_merchants
+                   SET latitude=?, longitude=?, location_note=?,
+                       phone=?, opening_hours=?, price_per_person=?
+                   WHERE external_id=?""",
+                (30.59, 114.30, "地理编码后人工复核",
+                 "027-12345678", "17:00-23:00", 76, "web:wuhan-local"),
+            )
+
+            refreshed = dict(initial)
+            refreshed["name"] = "更新后的餐厅名称"
+            import_real_merchants(connection, [refreshed])
+
+            item = connection.execute(
+                """SELECT name, latitude, longitude, location_note,
+                          phone, opening_hours, price_per_person
+                   FROM real_merchants WHERE external_id=?""",
+                ("web:wuhan-local",),
+            ).fetchone()
+            self.assertEqual(item["name"], "更新后的餐厅名称")
+            self.assertAlmostEqual(item["latitude"], 30.59)
+            self.assertAlmostEqual(item["longitude"], 114.30)
+            self.assertEqual(item["location_note"], "地理编码后人工复核")
+            self.assertEqual(item["phone"], "027-12345678")
+            self.assertEqual(item["opening_hours"], "17:00-23:00")
+            self.assertEqual(item["price_per_person"], 76)
+
+    def test_explicit_csv_coordinates_can_update_existing_coordinates(self):
+        """A corrected, explicit source coordinate should still be accepted."""
+        initial = record("web:wuhan-position", status="pending")
+        initial.update(latitude="30.59", longitude="114.30")
+        changed = dict(initial)
+        changed.update(latitude="30.60", longitude="114.31")
+
+        with database.connect() as connection:
+            import_real_merchants(connection, [initial])
+            import_real_merchants(connection, [changed])
+            item = connection.execute(
+                "SELECT latitude, longitude FROM real_merchants WHERE external_id=?",
+                ("web:wuhan-position",),
+            ).fetchone()
+            self.assertAlmostEqual(item["latitude"], 30.60)
+            self.assertAlmostEqual(item["longitude"], 114.31)
+
+    def test_rejects_half_filled_coordinates(self):
+        incomplete = record("web:wuhan-incomplete", status="pending")
+        incomplete["latitude"] = "30.59"
+        incomplete["longitude"] = ""
+
+        with database.connect() as connection:
+            with self.assertRaisesRegex(ValueError, "纬度和经度必须"):
+                import_real_merchants(connection, [incomplete])
+            self.assertIsNone(connection.execute(
+                "SELECT id FROM real_merchants WHERE external_id=?",
+                ("web:wuhan-incomplete",),
+            ).fetchone())
+
     def test_upsert_is_idempotent(self):
         with database.connect() as connection:
             import_real_merchants(connection, [record()])
