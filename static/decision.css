@@ -1,0 +1,225 @@
+/* Flow-specific styles. Base colors, typography and shell stay in style.css. */
+button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+a.button-primary {
+  display: inline-block;
+  text-decoration: none;
+}
+.decision-input,
+.conditions,
+#selected-place {
+  margin-bottom: 24px;
+  padding: 24px;
+  background: var(--surface);
+  border: 1px solid var(--green-line);
+  border-radius: 18px;
+}
+h2 {
+  font-size: 19px;
+  font-weight: 600;
+}
+h3 {
+  font-size: 14px;
+}
+.decision-input p,
+.conditions p,
+.decision-card p,
+#selected-place p {
+  font-size: 13px;
+  line-height: 1.8;
+}
+#request-message {
+  width: 100%;
+  min-height: 90px;
+  resize: vertical;
+  padding: 14px;
+  font: inherit;
+  border: 1px solid var(--green-line);
+  border-radius: 12px;
+  background: var(--paper);
+}
+.condition-tags,
+.card-actions,
+.quick-actions,
+.map-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+  align-items: center;
+}
+.condition-tags span {
+  padding: 5px 9px;
+  background: var(--surface-soft);
+  border-radius: 9px;
+  font-size: 12px;
+}
+.card-actions button:not(.button-primary),
+.quick-actions button,
+.map-controls button {
+  background: var(--paper);
+  color: var(--green-deep);
+  border: 1px solid var(--green-line);
+  border-radius: 9px;
+  padding: 8px 11px;
+  font-size: 12px;
+}
+.card-actions button[aria-pressed="true"] {
+  background: var(--green-pale);
+}
+.decision-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.decision-card {
+  background: var(--surface);
+  padding: 20px;
+  border: 1px solid var(--green-line);
+  border-radius: 18px;
+  min-width: 0;
+}
+.decision-card h2 {
+  line-height: 1.5;
+  margin: 10px 0;
+}
+.decision-card ul,
+#selected-place ul {
+  font-size: 12px;
+  padding-left: 18px;
+  line-height: 1.9;
+}
+.confirmation-note {
+  padding: 12px;
+  background: #fcf5e7;
+  border-radius: 12px;
+  color: #71613f;
+  font-size: 12px;
+}
+.confirmation-note ul {
+  margin-bottom: 0;
+}
+.source-note,
+figcaption {
+  color: var(--muted);
+  font-size: 11px !important;
+  line-height: 1.8;
+}
+.conversation-user {
+  border-left: 3px solid var(--green-line);
+  padding-left: 12px;
+}
+.directory-search {
+  display: flex;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+.directory-search label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+}
+.directory-search input {
+  font: inherit;
+  padding: 10px;
+  border: 1px solid var(--green-line);
+  border-radius: 10px;
+}
+.compare-tray {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 12px 20px;
+  border: 1px solid var(--green-line);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: 13px;
+}
+[hidden] {
+  display: none !important;
+}
+.comparison-scroll {
+  overflow-x: auto;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+th,
+td {
+  padding: 12px;
+  border: 1px solid var(--green-line);
+  min-width: 140px;
+  text-align: left;
+  vertical-align: top;
+}
+.evidence-gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.evidence-gallery figure {
+  width: min(220px, 100%);
+  margin: 0;
+}
+.evidence-gallery img {
+  width: 100%;
+  max-height: 180px;
+  object-fit: cover;
+  border-radius: 10px;
+}
+#merchant-detail ul {
+  padding-left: 20px;
+  line-height: 2;
+  font-size: 13px;
+}
+.decision-map {
+  height: 350px;
+  border-radius: 16px;
+  margin-bottom: 24px;
+  background: var(--surface-soft);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+@media (max-width: 900px) {
+  .decision-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 600px) {
+  .site-header {
+    flex-wrap: wrap;
+    gap: 16px;
+    padding: 16px;
+  }
+  .page-shell {
+    width: calc(100% - 24px);
+    padding-top: 24px;
+  }
+  .decision-input,
+  .conditions {
+    padding: 16px;
+  }
+  .compare-tray {
+    width: calc(100% - 24px);
+    justify-content: center;
+  }
+}

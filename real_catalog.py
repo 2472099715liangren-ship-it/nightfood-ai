@@ -43,6 +43,7 @@ def initialize_real_catalog(connection):
             price_per_person INTEGER,
             price_range_min INTEGER,
             price_range_max INTEGER,
+            price_range_basis TEXT NOT NULL DEFAULT 'unknown',
             opening_hours TEXT,
             source_name TEXT NOT NULL,
             source_url TEXT NOT NULL,
@@ -133,6 +134,7 @@ def initialize_real_catalog(connection):
         "location_note": "TEXT NOT NULL DEFAULT ''",
         "price_range_min": "INTEGER",
         "price_range_max": "INTEGER",
+        "price_range_basis": "TEXT NOT NULL DEFAULT 'unknown'",
     }
     for name, definition in merchant_migrations.items():
         if name not in columns:
@@ -225,6 +227,9 @@ def _validate(record):
     if (item["price_range_min"] is not None and item["price_range_max"] is not None
             and item["price_range_min"] > item["price_range_max"]):
         raise ValueError("人均价格区间上下限不合法")
+    item["price_range_basis"] = _clean(record.get("price_range_basis")) or "unknown"
+    if item["price_range_basis"] not in ("per_person", "dish", "unknown"):
+        raise ValueError("价格区间口径必须为 per_person、dish 或 unknown")
     status = _clean(record.get("status", "pending")) or "pending"
     if status not in VALID_STATUSES:
         raise ValueError("status 不合法")
@@ -259,12 +264,12 @@ def import_real_merchants(connection, records, dry_run=False):
         connection.execute("""
             INSERT INTO real_merchants (
                 external_id,name,district,address,cuisine,latitude,longitude,
-                phone,price_per_person,price_range_min,price_range_max,
+                phone,price_per_person,price_range_min,price_range_max,price_range_basis,
                 opening_hours,source_name,source_url,verified_at,source_checked_at,
                 source_published_at,signature_dishes,location_note,verification_method,status
             ) VALUES (
                 :external_id,:name,:district,:address,:cuisine,:latitude,:longitude,
-                :phone,:price_per_person,:price_range_min,:price_range_max,
+                :phone,:price_per_person,:price_range_min,:price_range_max,:price_range_basis,
                 :opening_hours,:source_name,:source_url,:verified_at,:source_checked_at,
                 :source_published_at,:signature_dishes,:location_note,:verification_method,:status
             )
@@ -280,6 +285,7 @@ def import_real_merchants(connection, records, dry_run=False):
                 price_per_person=COALESCE(excluded.price_per_person, real_merchants.price_per_person),
                 price_range_min=excluded.price_range_min,
                 price_range_max=excluded.price_range_max,
+                price_range_basis=excluded.price_range_basis,
                 opening_hours=COALESCE(excluded.opening_hours, real_merchants.opening_hours),
                 source_name=excluded.source_name,
                 source_url=excluded.source_url, verified_at=excluded.verified_at,
@@ -356,8 +362,9 @@ def public_real_merchants(connection, district="", keyword="", limit=100, offset
         "SELECT COUNT(*) FROM real_merchants WHERE " + where, parameters
     ).fetchone()[0]
     results = connection.execute(
+        "WITH recent_images AS (SELECT * FROM real_merchant_images WHERE taken_at >= ?) "
         "SELECT id,name,district,address,cuisine,latitude,longitude,"
-        "phone,price_per_person,price_range_min,price_range_max,opening_hours,source_name,source_url,"
+        "phone,price_per_person,price_range_min,price_range_max,price_range_basis,opening_hours,source_name,source_url,"
         "verified_at,source_checked_at,source_published_at,signature_dishes,location_note,"
         "verification_method,"
         "CASE WHEN status='verified' THEN 'verified' "
@@ -374,33 +381,33 @@ def public_real_merchants(connection, district="", keyword="", limit=100, offset
         " WHERE p.merchant_id=real_merchants.id AND p.status='verified' "
         " AND p.permission_confirmed=1 AND p.taken_at >= ? "
         " AND substr(p.verified_at,1,10) >= ? ORDER BY p.id LIMIT 1) AS photo_copyright_holder, "
-        "(SELECT i.image_url FROM real_merchant_images AS i "
+        "(SELECT i.image_url FROM recent_images AS i "
         " WHERE i.merchant_id=real_merchants.id ORDER BY "
         "CASE i.image_type WHEN 'storefront' THEN 0 WHEN 'dish' THEN 1 ELSE 2 END,i.id LIMIT 1) AS cover_image_url, "
-        "(SELECT i.image_type FROM real_merchant_images AS i "
+        "(SELECT i.image_type FROM recent_images AS i "
         " WHERE i.merchant_id=real_merchants.id ORDER BY "
         "CASE i.image_type WHEN 'storefront' THEN 0 WHEN 'dish' THEN 1 ELSE 2 END,i.id LIMIT 1) AS cover_image_type, "
-        "(SELECT i.caption FROM real_merchant_images AS i "
+        "(SELECT i.caption FROM recent_images AS i "
         " WHERE i.merchant_id=real_merchants.id ORDER BY "
         "CASE i.image_type WHEN 'storefront' THEN 0 WHEN 'dish' THEN 1 ELSE 2 END,i.id LIMIT 1) AS cover_image_caption, "
-        "(SELECT i.author FROM real_merchant_images AS i "
+        "(SELECT i.author FROM recent_images AS i "
         " WHERE i.merchant_id=real_merchants.id ORDER BY "
         "CASE i.image_type WHEN 'storefront' THEN 0 WHEN 'dish' THEN 1 ELSE 2 END,i.id LIMIT 1) AS cover_image_author, "
-        "(SELECT i.license FROM real_merchant_images AS i "
+        "(SELECT i.license FROM recent_images AS i "
         " WHERE i.merchant_id=real_merchants.id ORDER BY "
         "CASE i.image_type WHEN 'storefront' THEN 0 WHEN 'dish' THEN 1 ELSE 2 END,i.id LIMIT 1) AS cover_image_license, "
-        "(SELECT i.license_url FROM real_merchant_images AS i "
+        "(SELECT i.license_url FROM recent_images AS i "
         " WHERE i.merchant_id=real_merchants.id ORDER BY "
         "CASE i.image_type WHEN 'storefront' THEN 0 WHEN 'dish' THEN 1 ELSE 2 END,i.id LIMIT 1) AS cover_image_license_url, "
-        "(SELECT i.source_url FROM real_merchant_images AS i "
+        "(SELECT i.source_url FROM recent_images AS i "
         " WHERE i.merchant_id=real_merchants.id ORDER BY "
         "CASE i.image_type WHEN 'storefront' THEN 0 WHEN 'dish' THEN 1 ELSE 2 END,i.id LIMIT 1) AS cover_image_source_url, "
-        "(SELECT i.taken_at FROM real_merchant_images AS i "
+        "(SELECT i.taken_at FROM recent_images AS i "
         " WHERE i.merchant_id=real_merchants.id ORDER BY "
         "CASE i.image_type WHEN 'storefront' THEN 0 WHEN 'dish' THEN 1 ELSE 2 END,i.id LIMIT 1) AS cover_image_taken_at "
         "FROM real_merchants WHERE " + where + " ORDER BY updated_at DESC,id DESC "
         "LIMIT ? OFFSET ?", (
-            [_fresh_cutoff(), _fresh_cutoff()] * 3
+            [_fresh_cutoff()] + [_fresh_cutoff(), _fresh_cutoff()] * 3
             + parameters + [limit, offset]
         ),
     ).fetchall()
@@ -423,7 +430,7 @@ def get_public_real_merchant(connection, merchant_id):
     boundary = _fresh_cutoff()
     row = connection.execute(
         "SELECT id,name,district,address,cuisine,latitude,longitude,phone,"
-        "price_per_person,price_range_min,price_range_max,opening_hours,source_name,source_url,verified_at,"
+        "price_per_person,price_range_min,price_range_max,price_range_basis,opening_hours,source_name,source_url,verified_at,"
         "source_checked_at,source_published_at,signature_dishes,location_note,"
         "CASE WHEN status='verified' THEN 'verified' "
         "WHEN source_name='OpenStreetMap' THEN 'community' ELSE 'web_listing' END AS data_quality "
@@ -450,15 +457,15 @@ def get_public_real_merchant(connection, merchant_id):
     data["images"] = [
         dict(image) for image in connection.execute(
             "SELECT image_url,image_type,caption,taken_at,author,license,license_url,source_url "
-            "FROM real_merchant_images WHERE merchant_id=? ORDER BY id",
-            (merchant_id,),
+            "FROM real_merchant_images WHERE merchant_id=? AND taken_at >= ? ORDER BY id",
+            (merchant_id, boundary),
         )
     ]
     data["menu_items"] = [
         dict(item) for item in connection.execute(
             "SELECT dish_name,price,price_unit,price_source_url,price_checked_at,price_note "
-            "FROM real_merchant_menu_items WHERE merchant_id=? ORDER BY id",
-            (merchant_id,),
+            "FROM real_merchant_menu_items WHERE merchant_id=? AND price_checked_at >= ? ORDER BY id",
+            (merchant_id, boundary),
         )
     ]
     return data

@@ -1,8 +1,10 @@
 """NightFind HTTP application.
 
 Routes are intentionally small and explicit. Database queries live in database.py;
-recommendation and AI behavior live in services.py.
+the real dining workflow lives in dining_decision.py.
+services.py retains the older demonstration API.
 """
+
 import json
 import mimetypes
 import os
@@ -29,8 +31,19 @@ from database import (
 )
 from services import SCENES, chat
 from comparison import compare_merchants
-from real_catalog import public_real_merchants, catalog_coverage, get_public_real_merchant
+from real_catalog import (
+    public_real_merchants,
+    catalog_coverage,
+    get_public_real_merchant,
+)
 from merchant_photos import public_photo_file, safe_image_path
+from decision_catalog import set_real_favorite, saved_real_merchants
+from dining_decision import (
+    prepare_decision,
+    make_decision,
+    describe_merchant,
+    compare_real_merchants,
+)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -43,6 +56,9 @@ STATIC_FILES = {
     "/experience.css": "experience.css",
     "/app.js": "app.js",
     "/wuhan_map.js": "wuhan_map.js",
+    "/api-client.js": "api-client.js",
+    "/decision-view.js": "decision-view.js",
+    "/decision.css": "decision.css",
 }
 
 
@@ -115,7 +131,9 @@ class NightFindHandler(BaseHTTPRequestHandler):
                 return
             path = safe_image_path(entry["image_filename"])
             mime = {
-                ".jpg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"
+                ".jpg": "image/jpeg",
+                ".png": "image/png",
+                ".webp": "image/webp",
             }.get(path.suffix)
             self._send_bytes(path.read_bytes(), mime or "application/octet-stream")
         except (OSError, ValueError):
@@ -144,10 +162,29 @@ class NightFindHandler(BaseHTTPRequestHandler):
                     self._send_json(
                         {
                             "districts": list_districts(connection),
-                            "favorites": list_favorites(connection, session_id)
-                            if session_id else [],
-                            "ai_enabled": bool(os.environ.get("OPENAI_API_KEY", "").strip()),
+                            "favorites": (
+                                list_favorites(connection, session_id)
+                                if session_id
+                                else []
+                            ),
+                            "ai_enabled": bool(
+                                os.environ.get("OPENAI_API_KEY", "").strip()
+                            ),
                         }
+                    )
+                    return
+
+                if path == "/api/real-favorites":
+                    session_id = self._session_id()
+                    items = saved_real_merchants(connection, session_id)
+                    self._send_json(
+                        {"items": [describe_merchant(item) for item in items]}
+                    )
+                    return
+
+                if path == "/api/real-compare":
+                    self._send_json(
+                        compare_real_merchants(connection, query.get("ids", [""])[0])
                     )
                     return
 
@@ -159,6 +196,9 @@ class NightFindHandler(BaseHTTPRequestHandler):
                         limit=query.get("limit", ["30"])[0],
                         offset=query.get("offset", ["0"])[0],
                     )
+                    result["items"] = [
+                        describe_merchant(item) for item in result["items"]
+                    ]
                     self._send_json(result)
                     return
 
@@ -172,7 +212,7 @@ class NightFindHandler(BaseHTTPRequestHandler):
                     if item is None:
                         self._send_json({"error": "门店核验资料不足或已过期"}, 404)
                     else:
-                        self._send_json(item)
+                        self._send_json(describe_merchant(item))
                     return
 
                 if path == "/api/merchants":
@@ -223,9 +263,9 @@ class NightFindHandler(BaseHTTPRequestHandler):
 
                 if path == "/api/saved":
                     session_id = self._session_id()
-                    self._send_json({
-                        "items": list_saved_merchants(connection, session_id)
-                    })
+                    self._send_json(
+                        {"items": list_saved_merchants(connection, session_id)}
+                    )
                     return
 
                 if path == "/api/compare":
@@ -247,7 +287,7 @@ class NightFindHandler(BaseHTTPRequestHandler):
 
     @staticmethod
     def _resource_id(path, prefix):
-        value = path[len(prefix):]
+        value = path[len(prefix) :]
         if not value.isdigit():
             raise ValueError("商户编号无效")
         return int(value)
@@ -258,8 +298,28 @@ class NightFindHandler(BaseHTTPRequestHandler):
             payload = self._read_json()
             session_id = self._session_id()
 
+            # AI extraction happens before opening a SQLite write transaction.
+            if path == "/api/decision":
+                preferences, mode = prepare_decision(payload)
+                with connect() as connection:
+                    self._send_json(
+                        make_decision(connection, preferences, payload, mode)
+                    )
+                return
+
             with connect() as connection:
                 ensure_session(connection, session_id)
+
+                if path == "/api/real-favorites":
+                    set_real_favorite(
+                        connection,
+                        session_id,
+                        payload.get("merchant_id"),
+                        payload.get("active"),
+                    )
+                    connection.commit()
+                    self._send_json({"ok": True})
+                    return
 
                 if path == "/api/chat":
                     result = chat(
@@ -309,9 +369,7 @@ class NightFindHandler(BaseHTTPRequestHandler):
                     active = payload.get("active")
                     if not isinstance(active, bool):
                         raise ValueError("收藏操作需要明确的状态")
-                    set_favorite(
-                        connection, session_id, merchant_id, active
-                    )
+                    set_favorite(connection, session_id, merchant_id, active)
                     connection.commit()
                     self._send_json({"ok": True})
                     return

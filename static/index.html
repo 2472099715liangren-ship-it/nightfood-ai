@@ -1,55 +1,49 @@
 <!doctype html>
 <html lang="zh-CN">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f5f8f0">
-  <meta name="description" content="夜寻，轻松找到今晚适合你的那一餐。">
-  <title>夜寻 · 今晚吃点什么</title>
-  <link rel="stylesheet" href="/style.css">
-  <link rel="stylesheet" href="/experience.css">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-</head>
-<body>
-  <div class="ambient ambient-one" aria-hidden="true"></div>
-  <div class="ambient ambient-two" aria-hidden="true"></div>
-  <header class="site-header">
-    <a class="brand" href="/" aria-label="夜寻首页">
-      <span class="brand-mark">夜</span>
-      <span class="brand-copy"><strong>夜寻</strong><small>今晚吃点什么</small></span>
-    </a>
-    <nav class="main-nav" aria-label="主导航">
-      <button class="nav-link active" data-page="chat">聊聊今晚</button>
-      <button class="nav-link" data-page="merchants">商家小册</button>
-      <button class="nav-link" data-page="saved">今晚清单 <span id="saved-count" class="nav-count">0</span></button>
-      <button class="nav-link" data-page="suggestions">留言建议</button>
-    </nav>
-    <div class="header-note"><span class="status-dot"></span><span>慢慢挑，不着急</span></div>
-  </header>
-
-  <main id="app" class="page-shell">
-    <div class="loading-state">正在准备今晚的菜单…</div>
-  </main>
-
-  <div id="compare-tray" class="compare-tray" aria-live="polite" hidden></div>
-
-  <footer class="site-footer">
-    <a class="footer-brand" href="/">夜寻</a>
-    <span>把选择交给今晚的胃口，也把决定留给自己。</span>
-    <span>真实门店按两年内来源核对筛选 · 营业核验状态单独标注</span>
-  </footer>
-
-  <dialog id="merchant-dialog" class="merchant-dialog">
-    <button class="dialog-close" type="button" aria-label="关闭">×</button>
-    <div id="merchant-detail"></div>
-  </dialog>
-  <dialog id="compare-dialog" class="compare-dialog">
-    <button class="dialog-close compare-close" type="button" aria-label="关闭餐厅对比">×</button>
-    <div id="compare-detail"></div>
-  </dialog>
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
-  <script src="/wuhan_map.js" defer></script>
-  <script src="/app.js" defer></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f5f8f0" />
+    <title>夜寻 · 今晚去哪吃</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/decision.css" />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/"
+        ><span class="brand-mark">夜</span
+        ><span class="brand-copy"
+          ><strong>夜寻</strong><small>从想吃什么，到决定去哪</small></span
+        ></a
+      >
+      <nav class="main-nav" aria-label="主导航">
+        <button class="nav-link active" data-page="decision">开始挑选</button>
+        <button class="nav-link" data-page="directory">真实商家</button>
+        <button class="nav-link" data-page="saved">
+          今晚清单 <span id="saved-count">0</span>
+        </button>
+      </nav>
+    </header>
+    <main id="app" class="page-shell"><p>正在准备门店资料…</p></main>
+    <div id="compare-tray" class="compare-tray" aria-live="polite" hidden></div>
+    <footer class="site-footer">
+      <span>夜寻 · 武汉餐饮决策原型</span
+      ><span>资料有来源，未知项有说明；营业与消费请向门店确认。</span>
+    </footer>
+    <dialog id="merchant-dialog" class="merchant-dialog">
+      <button class="dialog-close" data-close aria-label="关闭">×</button>
+      <div id="merchant-detail"></div>
+    </dialog>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      defer
+    ></script>
+    <script src="/wuhan_map.js" defer></script>
+    <script type="module" src="/app.js"></script>
+  </body>
 </html>

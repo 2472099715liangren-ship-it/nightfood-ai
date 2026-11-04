@@ -157,6 +157,8 @@ def initialize_database(*, import_snapshot=True, import_bundled_catalog=True):
         # Keep verified real merchants in separate tables from prototype data.
         from real_catalog import initialize_real_catalog
         initialize_real_catalog(connection)
+        from decision_catalog import initialize_decision_tables
+        initialize_decision_tables(connection)
         # Seed the checked-in Wuhan merchant CSV files without network access.
         if import_bundled_catalog:
             from real_catalog import seed_bundled_catalog

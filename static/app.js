@@ -1,987 +1,351 @@
-/* NightFind front-end.
- * Page rendering and event handling are kept in one small, dependency-free file.
- */
-(function () {
-  "use strict";
+/* Page state and user actions. Rendering lives in decision-view.js. */
+import { request } from "./api-client.js";
+import {
+  escapeHtml as e,
+  constraintsView,
+  merchantCards,
+  detailsView,
+  choiceView,
+  comparisonView,
+} from "./decision-view.js";
 
-  const app = document.getElementById("app");
-  const dialog = document.getElementById("merchant-dialog");
-  const detail = document.getElementById("merchant-detail");
-  const toastNode = document.getElementById("toast");
-  const compareTray = document.getElementById("compare-tray");
-  const compareDialog = document.getElementById("compare-dialog");
-  const compareDetail = document.getElementById("compare-detail");
-  const sessionKey = "nightfind-session";
-  const sessionId = getSessionId();
+const root = document.getElementById("app");
+const dialog = document.getElementById("merchant-dialog");
+const detail = document.getElementById("merchant-detail");
+const state = {
+  page: "decision",
+  result: null,
+  history: [],
+  saved: new Set(),
+  compared: new Map(),
+  seen: new Set(),
+  selected: null,
+  busy: false,
+  directory: [],
+  directoryTotal: 0,
+  directoryPage: 0,
+  keyword: "",
+  district: "",
+};
+let toastTimer;
+let pageVersion = 0;
 
-  let districts = [];
-  let aiEnabled = false;
-  let currentPage = "chat";
-  let realMapMode = "list";
-  let realMapItems = [];
-  let conversation = [];
-  let conversationContext = {};
-  let savedIds = new Set();
-  let comparisonIds = new Map();
-  let seenRecommendationIds = new Set();
-  let chatBusy = false;
-  let toastTimer = null;
+function toast(message) {
+  const element = document.getElementById("toast");
+  element.textContent = message;
+  element.classList.add("visible");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => element.classList.remove("visible"), 3500);
+}
 
-  function getSessionId() {
-    let value = localStorage.getItem(sessionKey);
-    if (!value) {
-      value = window.crypto && crypto.randomUUID
-        ? crypto.randomUUID()
-        : "nf-" + Date.now() + "-" + Math.random().toString(36).slice(2);
-      localStorage.setItem(sessionKey, value);
-    }
-    return value;
-  }
+function renderTray() {
+  const tray = document.getElementById("compare-tray");
+  tray.hidden = !state.compared.size;
+  tray.innerHTML = `<span>已选 ${state.compared.size}/3 家</span><button class="button-primary" data-open-compare ${state.compared.size < 2 ? "disabled" : ""}>对比一下</button><button data-clear-compare>清空</button>`;
+  document.getElementById("saved-count").textContent = state.saved.size;
+}
 
-  function escapeHtml(value) {
-    return String(value == null ? "" : value).replace(/[&<>"']/g, function (char) {
-      return {
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;"
-      }[char];
-    });
-  }
-
-  async function request(path, options) {
-    const config = options || {};
-    const headers = Object.assign(
-      { "X-Session": sessionId },
-      config.body ? { "Content-Type": "application/json" } : {},
-      config.headers || {}
-    );
-    const response = await fetch(path, {
-      method: config.method || "GET",
-      headers: headers,
-      body: config.body ? JSON.stringify(config.body) : undefined
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || "请求暂时没有完成，请稍后再试。");
-    }
-    return data;
-  }
-
-  function showToast(message) {
-    toastNode.textContent = message;
-    toastNode.classList.add("visible");
-    window.clearTimeout(toastTimer);
-    toastTimer = window.setTimeout(function () {
-      toastNode.classList.remove("visible");
-    }, 2600);
-  }
-
-  function setActivePage(page) {
-    currentPage = page;
-    document.querySelectorAll(".nav-link").forEach(function (button) {
-      button.classList.toggle("active", button.dataset.page === page);
-    });
-  }
-
-  function selectOptions(values, selected) {
-    return values.map(function (value) {
-      const optionValue = Array.isArray(value) ? value[0] : value;
-      const label = Array.isArray(value) ? value[1] : value;
-      return '<option value="' + escapeHtml(optionValue) + '"' +
-        (String(optionValue) === String(selected) ? " selected" : "") + ">" +
-        escapeHtml(label) + "</option>";
-    }).join("");
-  }
-
-  function cuisineEmoji(cuisine) {
-    const icons = {
-      "烧烤": "🥢",
-      "小龙虾": "🦞",
-      "湖北菜": "🥣",
-      "家常菜": "🍚",
-      "粥粉面": "🍜"
-    };
-    return icons[cuisine] || "🍃";
-  }
-
-  function merchantCard(merchant, compact) {
-    const tags = (merchant.tags || []).slice(0, 3).map(function (tag) {
-      return '<span class="tag">' + escapeHtml(tag) + "</span>";
-    }).join("");
-    const score = merchant.score
-      ? '<span class="match-score">匹配度 ' + merchant.score + '</span>'
-      : "";
-    return '<article class="merchant-card">' +
-      '<div class="merchant-art art-' + escapeHtml(merchant.cuisine) + '">' +
-        '<span class="dish-emoji">' + cuisineEmoji(merchant.cuisine) + "</span>" +
-        '<span class="art-caption">' + escapeHtml(merchant.district || "") + "</span>" +
-      "</div>" +
-      '<div class="merchant-card-body">' +
-        '<div class="merchant-card-heading"><h3>' + escapeHtml(merchant.name) + "</h3>" +
-          '<span class="rating">★ ' + Number(merchant.rating || 0).toFixed(1) + "</span></div>" +
-        '<p class="merchant-summary">' + escapeHtml(merchant.description || "这家店正在等待一段更完整的介绍。") + "</p>" +
-        '<div class="merchant-facts"><span>人均 ¥' + merchant.price + "</span>" +
-          "<span>等位约 " + merchant.wait + " 分钟</span>" +
-          (merchant.closes ? "<span>演示营业至次日 " + (merchant.closes - 24) + ":00</span>" : "") +
-        "</div>" +
-        '<div class="tag-row">' + tags + score + "</div>" +
-        '<div class="merchant-actions">' +
-          '<button class="quiet-link" type="button" data-merchant="' + merchant.id + '">' +
-            (compact ? "看看这家 →" : "了解这家店 →") +
-          "</button>" +
-          '<button class="soft-action ' + (savedIds.has(merchant.id) ? "is-active" : "") +
-            '" type="button" data-favorite="' + merchant.id + '" aria-pressed="' + savedIds.has(merchant.id) +
-            '">' + (savedIds.has(merchant.id) ? "♥ 已收藏" : "♡ 今晚清单") + "</button>" +
-          '<button class="soft-action ' + (comparisonIds.has(merchant.id) ? "is-active" : "") +
-            '" type="button" data-compare="' + merchant.id + '" aria-pressed="' + comparisonIds.has(merchant.id) +
-            '">' + (comparisonIds.has(merchant.id) ? "✓ 已选择" : "⇄ 对比") + "</button>" +
-        "</div>" +
-      "</div>" +
-    "</article>";
-  }
-
-  function renderChatPage() {
-    setActivePage("chat");
-    const modeLabel = aiEnabled ? "AI 对话已连接" : "基础建议模式";
-    app.innerHTML =
-      '<section class="welcome-row">' +
-        '<div><span class="eyebrow">A LITTLE HELP FOR TONIGHT</span>' +
-          '<h1>今晚想吃点什么？</h1>' +
-          '<p class="welcome-copy">不用想得太周全，先说说你现在的心情和打算。</p></div>' +
-        '<div class="welcome-doodle" aria-hidden="true"><span>🍃</span><i></i><b></b></div>' +
-      "</section>" +
-      '<section class="chat-layout">' +
-        '<div class="chat-card">' +
-          '<div class="chat-card-top"><div class="helper-avatar">寻</div>' +
-            '<div><strong>夜寻小帮手</strong><small>陪你一起挑，不替你做决定</small></div>' +
-            '<span class="mode-pill">' + modeLabel + '</span>' +
-            '<button type="button" class="reset-chat" data-reset-chat="1">重新聊</button></div>' +
-          '<div id="chat-messages" class="chat-messages">' +
-            '<div class="message assistant"><div class="message-avatar">寻</div>' +
-              '<div class="message-content"><p>晚上好呀。你今天想吃点热乎的，还是想和朋友慢慢坐一会儿？</p>' +
-              '<p>告诉我大概在哪、预算多少，或者只说一句“想吃点清淡的”也可以。</p></div></div>' +
-          "</div>" +
-          '<div id="context-row" class="context-row" aria-live="polite"></div>' +
-          '<div class="chat-suggestions">' +
-            '<button type="button" data-prompt="人均 50 元左右，想吃点清淡的">🥬 想吃清淡一点</button>' +
-            '<button type="button" data-prompt="江汉路附近，朋友聚会，人均 100 元以内">🧑‍🤝‍🧑 和朋友聚餐</button>' +
-            '<button type="button" data-prompt="晚上 11 点还有什么夜宵选择？">🌙 找点夜宵</button>' +
-          "</div>" +
-          '<form id="chat-form" class="chat-composer">' +
-            '<input name="message" maxlength="2000" autocomplete="off" placeholder="说说你今晚的安排…" required>' +
-            '<button type="submit" aria-label="发送消息">发送 <span>↗</span></button>' +
-          "</form>" +
-          '<p class="privacy-note">请勿输入姓名、电话等个人信息。配置 AI 后，对话内容会发送至所配置的模型服务。当前商户资料为演示数据。</p>' +
-        "</div>" +
-        '<aside class="chat-aside">' +
-          '<div class="aside-note"><span class="note-icon">☀</span><h3>可以从这些开始</h3>' +
-            '<p>位置、预算、时间、口味，想到哪说到哪。</p></div>' +
-          '<div class="aside-tip"><span>01</span><div><b>说个大概位置</b><p>比如江汉路、光谷，或你常去的片区。</p></div></div>' +
-          '<div class="aside-tip"><span>02</span><div><b>给个预算范围</b><p>人均 50 元、100 元，或者今天想省一点。</p></div></div>' +
-          '<div class="aside-tip"><span>03</span><div><b>讲讲你的心情</b><p>一个人吃、朋友聚会，或散步时来点夜宵。</p></div></div>' +
-          '<div class="small-note">' +
-            (aiEnabled
-              ? "已配置 AI 服务。推荐仍以商家数据库中的信息为准。"
-              : "现在可以使用基础智能推荐。配置服务端 AI 密钥后，可启用更自然的 AI 对话。") +
-          "</div>" +
-        "</aside>" +
-      "</section>";
-
-    document.getElementById("chat-form").addEventListener("submit", submitChat);
-    document.querySelectorAll("[data-prompt]").forEach(function (button) {
-      button.addEventListener("click", function () {
-        const input = document.querySelector('#chat-form input[name="message"]');
-        input.value = button.dataset.prompt;
-        document.getElementById("chat-form").requestSubmit();
-      });
-    });
-
-    // Keep the conversation when the visitor switches to another section.
-    conversation.forEach(function (entry) {
-      appendMessage(entry.role, entry.content, entry.extraHtml);
-    });
-    renderContext();
-    refreshActionButtons();
-  }
-
-  function appendMessage(role, text, extraHtml) {
-    const messages = document.getElementById("chat-messages");
-    const bubble = document.createElement("div");
-    bubble.className = "message " + (role === "user" ? "user" : "assistant");
-    if (role === "user") {
-      bubble.innerHTML = '<div class="message-content"><p>' + escapeHtml(text) + "</p></div>";
-    } else {
-      bubble.innerHTML =
-        '<div class="message-avatar">寻</div><div class="message-content"><p>' +
-        escapeHtml(text).replace(/\n/g, "<br>") + "</p>" +
-        (extraHtml || "") + "</div>";
-    }
-    messages.appendChild(bubble);
-    messages.scrollTop = messages.scrollHeight;
-    return bubble;
-  }
-
-  function renderContext() {
-    const row = document.getElementById("context-row");
-    if (!row) return;
-    const known = conversationContext.known || [];
-    const values = [];
-    if (known.includes("district")) values.push(conversationContext.district);
-    if (known.includes("budget")) values.push("人均 ≤ ¥" + conversationContext.budget);
-    if (known.includes("wait")) values.push("等位 ≤ " + conversationContext.wait + " 分钟");
-    if (known.includes("cuisine")) values.push(conversationContext.cuisine);
-    if (known.includes("scene")) values.push(conversationContext.scene);
-    row.innerHTML = values.length
-      ? '<span class="context-label">记住了：</span>' +
-          values.map(function (item) {
-            return '<span class="context-pill">' + escapeHtml(item) + "</span>";
-          }).join("")
-      : "";
-  }
-
-  function sendQuickPrompt(message) {
-    if (!message) return;
-    if (currentPage !== "chat") renderChatPage();
-    const form = document.getElementById("chat-form");
-    if (!form) return;
-    form.elements.message.value = message;
-    form.requestSubmit();
-  }
-
-  async function submitChat(event) {
-    event.preventDefault();
-    if (chatBusy) {
-      showToast("这一条正在整理，稍等一下就好。");
-      return;
-    }
-    const form = event.currentTarget;
-    const input = form.elements.message;
-    const message = input.value.trim();
-    if (!message) return;
-
-    const isAlternate = /换一批|再换几家|看看别的/.test(message);
-    if (!isAlternate) seenRecommendationIds.clear();
-    chatBusy = true;
-    const sendButton = form.querySelector('button[type="submit"]');
-    sendButton.disabled = true;
-    input.value = "";
-    appendMessage("user", message);
-    const pending = appendMessage("assistant", "我看看有哪些选择…");
-    pending.classList.add("thinking");
-
-    try {
-      const result = await request("/api/chat", {
-        method: "POST",
-        body: {
-          message: message,
-          context: conversationContext,
-          history: conversation.slice(-8).map(function (entry) {
-            return { role: entry.role, content: entry.content };
-          }),
-          seen_ids: Array.from(seenRecommendationIds)
-        }
-      });
-      pending.remove();
-      conversation.push({ role: "user", content: message });
-      conversationContext = result.constraints || {};
-
-      let extra = "";
-      if (result.items && result.items.length) {
-        extra += '<div class="chat-recommendations"><div class="recommendation-heading">' +
-          "<strong>模拟商家推荐 · 仅供测试</strong><span>" + result.total +
-          " 家符合当前条件</span></div>" +
-          result.items.slice(0, 3).map(function (merchant) {
-            seenRecommendationIds.add(merchant.id);
-            return '<div class="chat-merchant"><div class="chat-merchant-icon">' +
-              cuisineEmoji(merchant.cuisine) + "</div><div><b>" +
-              escapeHtml(merchant.name) + "</b><small>人均 ¥" + merchant.price +
-              " · 等位约 " + merchant.wait + " 分钟</small></div>" +
-              '<div class="chat-merchant-actions">' +
-                '<button type="button" data-merchant="' + merchant.id + '">看看</button>' +
-                '<button type="button" data-favorite="' + merchant.id + '">♡ 留下</button>' +
-                '<button type="button" data-compare="' + merchant.id + '">⇄ 对比</button>' +
-              "</div></div>";
-          }).join("") + "</div>";
-      }
-      if (result.real_places && result.real_places.length) {
-        extra += '<div class="chat-recommendations"><div class="recommendation-heading">' +
-          '<strong>武汉开放地图收录</strong><span>社区资料 · 待核实</span></div>' +
-          '<p class="detail-note">' + escapeHtml(result.real_places_notice || "") + '</p>' +
-          result.real_places.slice(0, 3).map(function (place) {
-            return '<div class="chat-merchant"><div class="chat-merchant-icon">🌿</div>' +
-              '<div><b>' + escapeHtml(place.name) + '</b><small>' +
-              escapeHtml(place.district) + ' · ' + escapeHtml(place.cuisine) +
-              ' · 价格未提供</small></div><div class="chat-merchant-actions">' +
-              '<a href="' + escapeHtml(place.source_url) +
-              '" target="_blank" rel="noopener noreferrer">地图来源 ↗</a></div></div>';
-          }).join("") +
-          '<p class="real-license">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors · ODbL</a></p></div>';
-      }
-      if (result.follow_up && result.follow_up.actions) {
-        extra += '<div class="followup-section"><p class="followup-question">' +
-          escapeHtml(result.follow_up.question || "还想怎么挑？") + "</p>" +
-          '<div class="followup-options">' +
-          result.follow_up.actions.map(function (action) {
-            return '<button type="button" class="followup-chip" data-quick-prompt="' +
-              escapeHtml(action.message) + '">' + escapeHtml(action.label) + "</button>";
-          }).join("") + "</div></div>";
-      }
-      if (result.tips && result.tips.length) {
-        extra += '<div class="friendly-tips"><strong>顺手提醒</strong><ul>' +
-          result.tips.map(function (tip) {
-            return "<li>" + escapeHtml(tip) + "</li>";
-          }).join("") + "</ul></div>";
-      }
-      extra += '<span class="answer-mode">' +
-        (result.mode === "openai" ? "AI 帮你整理" : "按现有资料整理") +
-        " · 商家资料为演示数据</span>";
-      conversation.push({ role: "assistant", content: result.reply, extraHtml: extra });
-      if (currentPage === "chat" && document.getElementById("chat-messages")) {
-        appendMessage("assistant", result.reply, extra);
-        renderContext();
-        refreshActionButtons();
-      } else {
-        showToast("新建议已经整理好了，回到「聊聊今晚」即可查看。");
-      }
-    } catch (error) {
-      pending.remove();
-      if (currentPage === "chat" && document.getElementById("chat-messages")) {
-        appendMessage("assistant", error.message || "刚刚没连上，请再试一次。");
-      }
-    } finally {
-      chatBusy = false;
-      if (sendButton.isConnected) sendButton.disabled = false;
-    }
-  }
-
-  async function renderRealCatalog(page) {
-    page = Math.max(0, Number(page) || 0);
-    const container = document.getElementById("real-catalog-results");
-    if (!container) return;
-    const district = document.getElementById("real-district").value;
-    const keyword = document.getElementById("real-keyword").value.trim();
-    const params = new URLSearchParams({limit: "100", offset: String(page * 100)});
-    if (district) params.set("district", district);
-    if (keyword) params.set("keyword", keyword);
-    container.innerHTML = '<p class="feature-description">正在查询武汉真实商家…</p>';
-    try {
-      const [result, coverage] = await Promise.all([
-        request("/api/real-merchants?" + params.toString()),
-        request("/api/real-merchants/coverage")
-      ]);
-      const count = document.getElementById("real-coverage-count");
-      if (count) count.textContent = "网页收录 " + (coverage.web_listing_total || 0) +
-        " 家 · 人工核验 " + (coverage.verified_total || 0) +
-        " 家 · OSM 社区 " + (coverage.community_total || 0) + " 家";
-      realMapItems = result.items || [];
-      container.innerHTML = result.items.length ? result.items.map(function (merchant) {
-        const verified = merchant.data_quality === "verified";
-        const photo = merchant.cover_image_url
-          ? '<figure class="real-shop-photo-figure"><img class="real-shop-photo" loading="lazy" alt="' +
-            escapeHtml(merchant.name) + '菜品参考图" src="' +
-            escapeHtml(merchant.cover_image_url) + '"><figcaption>' +
-            escapeHtml(merchant.cover_image_caption || "图片参考") + ' · ' +
-            escapeHtml(merchant.cover_image_author || "作者未注明") + ' · ' +
-            escapeHtml(merchant.cover_image_license || "") +
-            '</figcaption></figure>'
-          : '<div class="real-shop-photo-placeholder">📷 暂无可展示图片</div>';
-        const price = merchant.price_per_person != null
-          ? "人均约 ¥" + merchant.price_per_person
-          : merchant.price_range_min != null && merchant.price_range_max != null
-            ? "参考价 ¥" + merchant.price_range_min + "–" + merchant.price_range_max
-            : "人均价格待核";
-        const quality = verified ? "人工核验" :
-          merchant.data_quality === "community" ? "OSM社区收录" : "网页收录 · 营业状态未核";
-        const dishes = (merchant.signature_dishes || "").split(";").filter(Boolean).join("、");
-        return '<article class="real-shop">' + photo +
-          '<div class="real-shop-main"><strong>' + escapeHtml(merchant.name) +
-          '</strong><p>' + escapeHtml(merchant.district) + " · " + escapeHtml(merchant.address) +
-          '</p><small>' + escapeHtml(merchant.cuisine) + " · " + escapeHtml(price) +
-          '</small>' + (dishes ? '<p class="real-shop-dishes">招牌：' + escapeHtml(dishes) + '</p>' : '') +
-          '</div><div class="real-shop-meta"><span>' + escapeHtml(quality) +
-          '</span><small>资料核对 ' + escapeHtml(merchant.source_checked_at || "未记录") +
-          '</small><button type="button" class="quiet-link" data-real-merchant="' +
-          merchant.id + '">查看菜单与图片 →</button>' +
-          '<a href="' + escapeHtml(merchant.source_url) +
-          '" target="_blank" rel="noopener noreferrer">资料来源 ↗</a></div></article>';
-      }).join("") : '<div class="saved-empty"><h2>没有找到符合条件的真实商家</h2>' +
-        '<p>可尝试清空行政区或关键词筛选。来源日期不符合近两年要求的资料不会公开。</p></div>';
-      updateRealMapView();
-      if (result.total > 100) {
-        container.insertAdjacentHTML("beforeend",
-          '<div class="real-pagination">' +
-          '<span>第 ' + (page + 1) + ' 页 · 共 ' + result.total + ' 家（社区收录/核验）</span>' +
-          '<button type="button" class="soft-action" data-real-page="' + (page - 1) +
-          '"' + (page === 0 ? " disabled" : "") + '>上一页</button>' +
-          '<button type="button" class="soft-action" data-real-page="' + (page + 1) +
-          '"' + ((page + 1) * 100 >= result.total ? " disabled" : "") + '>下一页</button>' +
-          '</div>');
-      }
-    } catch (error) {
-      container.textContent = error.message;
-    }
-  }
-
-  function updateRealMapView() {
-    const container = document.getElementById("real-catalog-results");
-    const panel = document.getElementById("real-osm-map-panel");
-    if (!container || !panel) return;
-    const mapActive = realMapMode === "map";
-    container.hidden = mapActive;
-    panel.hidden = !mapActive;
-    document.querySelectorAll("[data-osm-view]").forEach(function (button) {
-      const active = button.dataset.osmView === realMapMode;
-      button.classList.toggle("is-active", active);
-      button.setAttribute("aria-pressed", String(active));
-    });
-    if (!mapActive) return;
-    const status = document.getElementById("real-map-status");
-    if (!window.NightFindWuhanMap) {
-      status.textContent = "地图组件不可用，请使用列表";
-      return;
-    }
-    const result = window.NightFindWuhanMap.draw(
-      document.getElementById("real-osm-map"), realMapItems
-    );
-    status.textContent = result.available
-      ? "当前页地图标注 " + result.pins + " 家有效来源的门店"
-      : "地图组件不可用，请使用列表";
-  }
-
-  async function showRealMerchant(merchantId) {
-    try {
-      const merchant = await request("/api/real-merchants/" + merchantId);
-      const gallery = (merchant.images || []).map(function (photo) {
-        return '<figure class="real-shop-gallery-item"><img loading="lazy" alt="' +
-          escapeHtml(merchant.name) + '菜品参考图片" src="' +
-          escapeHtml(photo.image_url) + '"><figcaption>' +
-          escapeHtml(photo.caption || "图片参考") + ' · 拍摄 ' +
-          escapeHtml(photo.taken_at) + ' · ' + escapeHtml(photo.author) +
-          ' · ' + escapeHtml(photo.license) +
-          ' · <a target="_blank" rel="noopener noreferrer" href="' +
-          escapeHtml(photo.source_url) + '">图片来源</a></figcaption></figure>';
-      }).join("");
-      const menu = (merchant.menu_items || []).map(function (item) {
-        const price = item.price == null ? "未找到可靠公开单价" :
-          "¥" + Number(item.price).toFixed(Number(item.price) % 1 ? 1 : 0) +
-          (item.price_unit ? " / " + escapeHtml(item.price_unit) : "");
-        return '<li><div><strong>' + escapeHtml(item.dish_name) +
-          '</strong><span>' + price + '</span></div>' +
-          (item.price_note ? '<small>' + escapeHtml(item.price_note) + '</small>' : '') +
-          '<small>价格来源：<a target="_blank" rel="noopener noreferrer" href="' +
-          escapeHtml(item.price_source_url) + '">' + escapeHtml(item.price_checked_at || "日期待确认") +
-          '</a></small></li>';
-      }).join("");
-      const verified = merchant.data_quality === "verified";
-      const quality = verified ? "人工核验通过" :
-        merchant.data_quality === "community" ? "OSM社区收录，营业状态未核验" :
-          "公开网页收录，营业状态未人工核验";
-      const price = merchant.price_per_person != null
-        ? "人均约 ¥" + merchant.price_per_person
-        : merchant.price_range_min != null && merchant.price_range_max != null
-          ? "参考价格 ¥" + merchant.price_range_min + "–" + merchant.price_range_max
-          : "人均价格未知";
-      detail.innerHTML =
-        '<span class="eyebrow">WUHAN MERCHANT DIRECTORY</span><h2>' +
-          escapeHtml(merchant.name) + '</h2>' +
-        '<div class="real-shop-gallery">' +
-          (gallery || '<p class="real-photo-empty">暂无可合法展示的近两年图片</p>') +
-        '</div>' +
-        '<p class="detail-description">' + escapeHtml(merchant.district) + ' · ' +
-          escapeHtml(merchant.address) + '</p>' +
-        '<p class="detail-description">' + escapeHtml(merchant.cuisine) + ' · ' +
-          escapeHtml(price) + '</p>' +
-        (merchant.signature_dishes ? '<p class="detail-description">招牌菜：' +
-          escapeHtml(merchant.signature_dishes.split(";").join("、")) + '</p>' : '') +
-        (merchant.menu_items && merchant.menu_items.length ? '<h3>菜品与价格</h3><ul class="real-menu-list">' +
-          menu + '</ul>' : '<p class="detail-description">暂未找到可核实的公开单品价格。</p>') +
-        '<p class="detail-description">资料核对：' +
-          escapeHtml(merchant.source_checked_at || '无') + ' · ' + escapeHtml(quality) +
-          (merchant.source_published_at ? ' · 来源发布日期 ' + escapeHtml(merchant.source_published_at) : '') +
-          '</p>' +
-        (merchant.location_note ? '<p class="detail-description">定位说明：' +
-          escapeHtml(merchant.location_note) + '</p>' : '') +
-        '<p class="real-license">商家资料来源：<a target="_blank" rel="noopener noreferrer" href="' +
-          escapeHtml(merchant.source_url) + '">' + escapeHtml(merchant.source_name) +
-          ' ↗</a></p>';
-      dialog.showModal();
-    } catch (error) {
-      showToast(error.message);
-    }
-  }
-
-  async function renderMerchantPage() {
-    setActivePage("merchants");
-    app.innerHTML =
-      '<section class="page-intro"><span class="eyebrow">THE LITTLE MERCHANT BOOK</span>' +
-        '<h1>附近的好店，慢慢认识。</h1>' +
-        '<p>先看看有什么，再挑一家合今晚胃口的。</p></section>' +
-      '<form id="merchant-search" class="merchant-search">' +
-        '<label class="search-field"><span>⌕</span><input name="keyword" placeholder="搜店名、菜系或特色"></label>' +
-        '<select name="district" aria-label="选择商圈"><option value="">全部商圈</option>' +
-          selectOptions(districts.map(function (item) { return [item.name, item.name]; }), "") +
-        "</select>" +
-        '<select name="cuisine" aria-label="选择菜系"><option value="">全部口味</option>' +
-          selectOptions(["烧烤", "小龙虾", "湖北菜", "家常菜", "粥粉面"], "") +
-        "</select>" +
-        '<select name="max_price" aria-label="人均预算"><option value="">不限预算</option>' +
-          selectOptions([[30, "人均 30 元内"], [50, "人均 50 元内"], [80, "人均 80 元内"], [100, "人均 100 元内"], [150, "人均 150 元内"]], "") +
-        "</select>" +
-        '<button class="button-primary" type="submit">找一找</button>' +
-      "</form>" +
-      '<section class="real-catalog-panel"><div class="real-catalog-title"><div>' +
-        '<span class="eyebrow">REAL WUHAN DIRECTORY</span><h2>武汉真实商家资料</h2>' +
-        '<p>当前收录55家武汉门店（目前集中在5个区），资料在近两年内采集/核对；网页收录不等于营业状态已人工核验。菜品价格只展示有来源的单价，其余明确标注待核。</p>' +
-        '</div><span id="real-coverage-count">统计中…</span></div>' +
-        '<form id="real-search" class="real-search"><input id="real-keyword" placeholder="查找真实店名或地址" maxlength="80">' +
-        '<select id="real-district"><option value="">武汉全市</option>' +
-        selectOptions(["江岸区","江汉区","硚口区","汉阳区","武昌区","青山区",
-          "洪山区","东西湖区","蔡甸区","江夏区","黄陂区","新洲区","汉南区"], "") +
-        '</select><button class="button-primary">搜索</button></form>' +
-        '<p class="real-license">地图底图与地址定位 © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors · ODbL</a>。商家资料另附各自来源；地址、营业和价格请在出发前核实。</p>' +
-        '<div class="real-map-actions" role="group" aria-label="真实商家显示方式">' +
-          '<button type="button" class="soft-action is-active" data-osm-view="list" aria-pressed="true">☷ 列表</button>' +
-          '<button type="button" class="soft-action" data-osm-view="map" aria-pressed="false">⌖ 地图</button>' +
-          '<span id="real-map-status">只标注有WGS84坐标的门店；未定位门店仍保留在列表</span></div>' +
-        '<div id="real-catalog-results"></div>' +
-        '<div id="real-osm-map-panel" hidden><div id="real-osm-map" class="real-osm-map" role="region" aria-label="武汉真实门店分布图"></div>' +
-          '<div class="real-map-legend"><span><i class="verified-dot"></i>人工核验</span>' +
-          '<span><i class="community-dot"></i>OSM社区收录</span>' +
-          '<span><i class="web-listing-dot"></i>网页收录，营业状态未核</span></div>' +
-          '<p class="real-map-caption">地图只标注当前筛选页内有WGS84坐标的门店；没有可靠坐标的记录仍显示在列表中，不会猜测地图位置。地图瓦片仅供低流量预览。</p></div></section>' +
-      '<div class="directory-toolbar"><span id="merchant-count">正在整理演示商家…</span>' +
-        '<span>资料均为研究演示内容</span></div>' +
-      '<div id="merchant-grid" class="merchant-grid"></div>';
-
-    document.getElementById("merchant-search").addEventListener("submit", function (event) {
+function renderDecision() {
+  window.NightFindWuhanMap?.dispose();
+  const result = state.result;
+  root.innerHTML = `<section class="page-intro"><span class="eyebrow">从想吃什么，到决定去哪</span><h1>今晚，选一家适合的店。</h1>
+    <p>说明人数、预算、位置、时间和口味。我们从有来源的真实门店资料中帮你缩小选择。</p></section>
+    <section class="decision-input"><h2>说说你的打算</h2>
+      <div id="conversation-log" aria-live="polite">${state.history
+        .slice(-6)
+        .map(
+          (entry) =>
+            `<p class="conversation-${entry.role}"><strong>${entry.role === "user" ? "你" : "夜寻"}：</strong>${e(entry.text)}</p>`,
+        )
+        .join("")}</div>
+      <form id="decision-form"><label class="sr-only" for="request-message">你的用餐需求</label><textarea id="request-message" name="message" maxlength="2000" required placeholder="例如：今晚七点，四个人在江汉路附近，总共三百元，想吃湖北菜。" ${state.busy ? "disabled" : ""}></textarea>
+        <div class="card-actions"><button class="button-primary" ${state.busy ? "disabled" : ""}>${state.busy ? "正在整理…" : "帮我挑选"}</button><button type="button" data-location ${state.busy ? "disabled" : ""}>使用当前位置</button><button type="button" data-reset ${state.busy ? "disabled" : ""}>重新开始</button></div></form>
+      <div class="quick-actions">${(result?.follow_up?.actions || ["今晚七点，四个人，江汉路附近，总预算300元，湖北菜"]).map((message) => `<button data-message="${e(message)}" ${state.busy ? "disabled" : ""}>${e(message)}</button>`).join("")}</div>
+      <p class="source-note">${result?.mode === "ai" ? "本轮由 AI 提取条件，门店事实来自资料库。" : result?.mode === "fallback" ? "AI 暂不可用，本轮使用本地条件解析。" : "本地条件解析可直接使用；配置 AI 后可理解更灵活的表达。"}</p>
+    </section>
+    <section class="conditions" aria-label="已理解的条件"><h2>目前理解的需求</h2>${constraintsView(result?.constraints, result?.budget_per_person)}</section>
+    <section id="selected-place" ${state.selected ? "" : "hidden"}>${state.selected ? choiceView(state.selected) : ""}</section>
+    ${
+      result
+        ? `<section aria-live="polite"><h2>${result.stage === "clarify" ? "先确认一下" : "这次的候选"}</h2><p>${e(result.reply)}</p>
+      ${result.items.length ? `<div class="decision-grid">${merchantCards(result.items, state.saved, state.compared, true)}</div><div class="map-controls"><button data-show-map>在地图上看这几家</button></div><div id="decision-map" class="decision-map" hidden></div>` : ""}
+      ${
+        Object.keys(result.excluded).length
+          ? `<details><summary>为什么有些门店没有入选？</summary><ul>${Object.entries(
+              result.excluded,
+            )
+              .map(([reason, count]) => `<li>${e(reason)}：${count} 家</li>`)
+              .join("")}</ul></details>`
+          : ""
+      }</section>`
+        : ""
+    }`;
+  document
+    .getElementById("decision-form")
+    .addEventListener("submit", (event) => {
       event.preventDefault();
-      loadMerchants(new FormData(event.currentTarget));
+      sendMessage(new FormData(event.currentTarget).get("message"));
     });
-    document.getElementById("real-search").addEventListener("submit", function(event) {
-      event.preventDefault();
-      renderRealCatalog();
+}
+
+async function sendMessage(message, location) {
+  if (state.busy) return;
+  state.busy = true;
+  state.history.push({ role: "user", text: message });
+  renderDecision();
+  try {
+    const result = await request("/api/decision", {
+      message,
+      context: state.result?.constraints || {},
+      location,
+      previous_ids: state.result?.items.map((item) => item.id) || [],
+      seen_ids: Array.from(state.seen),
+      keep_ids:
+        state.result?.items
+          .filter((item) => item.kept)
+          .map((item) => item.id) || [],
     });
-    renderRealCatalog();
-    await loadMerchants(new FormData(document.getElementById("merchant-search")));
+    // Start a fresh rotation when the actual constraints change.
+    if (
+      JSON.stringify(result.constraints) !==
+      JSON.stringify(state.result?.constraints)
+    )
+      state.seen.clear();
+    result.items.forEach((item) => state.seen.add(item.id));
+    state.result = result;
+    state.history.push({ role: "assistant", text: result.reply });
+    state.selected = null;
+  } catch (error) {
+    state.history.push({ role: "assistant", text: error.message });
+    if (state.result)
+      state.result = {
+        ...state.result,
+        items: [],
+        reply: error.message,
+        eligible_total: 0,
+        excluded: {},
+      };
+    toast(error.message);
+  } finally {
+    state.busy = false;
+    if (state.page === "decision") renderDecision();
   }
+}
 
-  async function loadMerchants(formData) {
-    const params = new URLSearchParams();
-    ["keyword", "district", "cuisine", "max_price"].forEach(function (key) {
-      const value = formData.get(key);
-      if (value) params.set(key, value);
-    });
-    const grid = document.getElementById("merchant-grid");
-    grid.innerHTML = '<div class="empty-state">正在翻翻商家小册…</div>';
-    try {
-      const result = await request("/api/merchants?" + params.toString());
-      document.getElementById("merchant-count").textContent =
-        "找到 " + result.total + " 家店";
-      grid.innerHTML = result.items.length
-        ? result.items.map(function (merchant) {
-            return merchantCard(merchant, false);
-          }).join("")
-        : '<div class="empty-state">暂时没有符合条件的店。试试换个口味或放宽预算？</div>';
-    } catch (error) {
-      grid.innerHTML = '<div class="empty-state">' + escapeHtml(error.message) + "</div>";
-    }
-  }
-
-  async function showMerchant(merchantId) {
-    try {
-      const merchant = await request("/api/merchants/" + merchantId);
-      const dishes = (merchant.dishes || []).map(function (dish) {
-        return '<div class="dish-row"><span>' + escapeHtml(dish.name) +
-          "</span><b>¥" + dish.price + "</b></div>";
-      }).join("");
-      const reviews = (merchant.reviews || []).map(function (review) {
-        return '<div class="detail-review"><span>★ ' + review.rating +
-          "</span><p>" + escapeHtml(review.comment || "没有填写文字评价") + "</p></div>";
-      }).join("");
-      detail.innerHTML =
-        '<span class="eyebrow">A PLACE TO TRY</span><h2>' + escapeHtml(merchant.name) + "</h2>" +
-        '<div class="detail-art art-' + escapeHtml(merchant.cuisine) + '">' +
-          '<span class="dish-emoji">' + cuisineEmoji(merchant.cuisine) + "</span></div>" +
-        '<p class="detail-description">' + escapeHtml(merchant.description) + "</p>" +
-        '<div class="detail-facts"><span>' + escapeHtml(merchant.district) + "</span>" +
-          "<span>" + escapeHtml(merchant.cuisine) + "</span><span>人均 ¥" + merchant.price +
-          "</span><span>等位约 " + merchant.wait + " 分钟</span></div>" +
-        '<p class="detail-address">' + escapeHtml(merchant.address_label || "商圈信息待补充") +
-          " · 基础评分为演示值</p>" +
-        '<div class="merchant-actions">' +
-          '<button class="soft-action" type="button" data-favorite="' + merchant.id + '">♡ 今晚清单</button>' +
-          '<button class="soft-action" type="button" data-compare="' + merchant.id + '">⇄ 加入对比</button>' +
-        "</div>" +
-        "<h3>菜单小记</h3>" + (dishes || '<p class="detail-description">暂时还没有菜单信息。</p>') +
-        "<h3>大家的反馈</h3>" + (reviews || '<p class="detail-description">还没有收到评价。</p>') +
-        '<form id="merchant-feedback" class="detail-feedback">' +
-          "<h3>写下你的体验</h3><input type=\"hidden\" name=\"merchant_id\" value=\"" + merchant.id + '">' +
-          '<label>给这家店打个分<select name="rating">' +
-            selectOptions([[5, "5 分 · 很喜欢"], [4, "4 分 · 不错"], [3, "3 分 · 还可以"], [2, "2 分 · 有待改进"], [1, "1 分 · 不太满意"]], 5) +
-          "</select></label>" +
-          '<textarea name="comment" maxlength="2000" placeholder="分享一点真实体验（选填）"></textarea>' +
-          '<button class="button-primary" type="submit">提交反馈</button></form>' +
-        '<p class="data-note">提示：商家介绍、菜品、价格和基础评分是演示资料，地址为示例商圈标签，不是实际门牌。</p>';
-      dialog.showModal();
-      document.getElementById("merchant-feedback").addEventListener("submit", submitMerchantFeedback);
-    } catch (error) {
-      showToast(error.message);
-    }
-  }
-
-  async function submitMerchantFeedback(event) {
+async function renderDirectory(version) {
+  root.innerHTML = `<section class="page-intro"><h1>${state.page === "saved" ? "今晚清单" : "真实商家资料"}</h1><p>收藏、详情、对比和导航均对应具体分店。网页收录不代表营业状态已人工核验。</p></section>
+    ${state.page === "directory" ? `<form id="directory-form" class="directory-search"><label>店名、菜系或地址<input name="keyword" value="${e(state.keyword)}" maxlength="80"></label><label>行政区<input name="district" value="${e(state.district)}" placeholder="例如：江汉区"></label><button class="button-primary">搜索</button></form>` : ""}
+    <div id="directory-results" class="decision-grid"><p>正在读取门店资料…</p></div><div id="directory-pagination" class="card-actions"></div>`;
+  const form = document.getElementById("directory-form");
+  form?.addEventListener("submit", (event) => {
     event.preventDefault();
-    const form = event.currentTarget;
-    const values = Object.fromEntries(new FormData(form));
-    try {
-      await request("/api/feedback", {
-        method: "POST",
-        body: {
-          merchant_id: Number(values.merchant_id),
-          rating: Number(values.rating),
-          comment: values.comment
+    const data = new FormData(form);
+    state.keyword = data.get("keyword");
+    state.district = data.get("district");
+    state.directoryPage = 0;
+    navigate("directory");
+  });
+  try {
+    const query = new URLSearchParams({
+      keyword: state.keyword,
+      district: state.district,
+      limit: "30",
+      offset: String(state.directoryPage * 30),
+    });
+    const response = await request(
+      state.page === "saved"
+        ? "/api/real-favorites"
+        : `/api/real-merchants?${query}`,
+    );
+    if (version !== pageVersion) return;
+    state.directory = response.items;
+    state.directoryTotal = response.total || 0;
+    document.getElementById("directory-results").innerHTML = merchantCards(
+      response.items,
+      state.saved,
+      state.compared,
+    );
+    if (state.page === "directory" && response.total > 30) {
+      document.getElementById("directory-pagination").innerHTML =
+        `<button data-directory-page="${state.directoryPage - 1}" ${state.directoryPage === 0 ? "disabled" : ""}>上一页</button><span>第 ${state.directoryPage + 1} 页 · 共 ${response.total} 家</span><button data-directory-page="${state.directoryPage + 1}" ${(state.directoryPage + 1) * 30 >= response.total ? "disabled" : ""}>下一页</button>`;
+    }
+  } catch (error) {
+    if (version === pageVersion)
+      document.getElementById("directory-results").textContent = error.message;
+  }
+}
+
+function navigate(page) {
+  state.page = page;
+  pageVersion += 1;
+  window.NightFindWuhanMap?.dispose();
+  document
+    .querySelectorAll("[data-page]")
+    .forEach((button) =>
+      button.classList.toggle("active", button.dataset.page === page),
+    );
+  if (page === "decision") renderDecision();
+  else renderDirectory(pageVersion);
+  renderTray();
+}
+
+async function merchantById(id) {
+  const detail = await request(`/api/real-merchants/${id}`);
+  const candidate = state.result?.items.find((item) => item.id === id);
+  return {
+    ...detail,
+    ...(candidate
+      ? {
+          questions: candidate.questions,
+          distance_km: candidate.distance_km,
+          reasons: candidate.reasons,
+          estimated_total: candidate.estimated_total,
         }
+      : {}),
+  };
+}
+
+async function choose(id) {
+  state.selected = await merchantById(id);
+  dialog.close();
+  navigate("decision");
+  document
+    .getElementById("selected-place")
+    .scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+async function toggleSave(id) {
+  const active = !state.saved.has(id);
+  await request("/api/real-favorites", { merchant_id: id, active });
+  if (active) state.saved.add(id);
+  else state.saved.delete(id);
+  toast(active ? "已保存到今晚清单" : "已取消收藏");
+  navigate(state.page);
+}
+
+async function toggleCompare(id) {
+  if (state.compared.has(id)) state.compared.delete(id);
+  else {
+    if (state.compared.size >= 3) return toast("最多比较三家，请先取消一项。");
+    state.compared.set(id, await merchantById(id));
+  }
+  navigate(state.page);
+}
+
+async function openComparison() {
+  if (state.compared.size < 2) return;
+  const ids = Array.from(state.compared.keys());
+  const result = await request(`/api/real-compare?ids=${ids.join(",")}`);
+  const items = result.items.map((item) => ({
+    ...item,
+    ...{
+      distance_km: state.result?.items.find(
+        (candidate) => candidate.id === item.id,
+      )?.distance_km,
+      questions: state.result?.items.find(
+        (candidate) => candidate.id === item.id,
+      )?.questions,
+    },
+  }));
+  detail.innerHTML = comparisonView(items);
+  dialog.showModal();
+}
+
+function locate() {
+  if (state.busy) return;
+  if (!navigator.geolocation)
+    return toast("浏览器不支持定位，请输入出发商圈。");
+  toast("请在浏览器中选择是否允许定位。");
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      sendMessage("使用我提供的当前位置", {
+        name: "我的位置",
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
       });
-      showToast("谢谢你，反馈已经收到。");
-      dialog.close();
-    } catch (error) {
-      showToast(error.message);
+    },
+    () => toast("未获取到位置，可以直接输入商圈或行政区。"),
+    { timeout: 10000, maximumAge: 60000 },
+  );
+}
+
+// One delegated action handler keeps dynamic cards and dialogs consistent.
+document.addEventListener("click", async (event) => {
+  const button = event.target.closest("button");
+  if (!button || button.disabled) return;
+  try {
+    if (button.dataset.page) return navigate(button.dataset.page);
+    if (button.hasAttribute("data-close")) return dialog.close();
+    if (button.hasAttribute("data-reset")) {
+      state.result = null;
+      state.history = [];
+      state.seen.clear();
+      state.selected = null;
+      return navigate("decision");
     }
+    if (button.hasAttribute("data-location")) return locate();
+    if (button.dataset.message)
+      return await sendMessage(button.dataset.message);
+    if (button.dataset.detail) {
+      detail.innerHTML = detailsView(
+        await merchantById(Number(button.dataset.detail)),
+      );
+      return dialog.showModal();
+    }
+    if (button.dataset.choose)
+      return await choose(Number(button.dataset.choose));
+    if (button.dataset.save)
+      return await toggleSave(Number(button.dataset.save));
+    if (button.dataset.compare)
+      return await toggleCompare(Number(button.dataset.compare));
+    if (button.dataset.keep) {
+      const item = state.result.items.find(
+        (item) => item.id === Number(button.dataset.keep),
+      );
+      item.kept = !item.kept;
+      return renderDecision();
+    }
+    if (button.hasAttribute("data-open-compare")) return await openComparison();
+    if (button.hasAttribute("data-clear-compare")) {
+      state.compared.clear();
+      return navigate(state.page);
+    }
+    if (button.dataset.directoryPage != null) {
+      state.directoryPage = Number(button.dataset.directoryPage);
+      return navigate("directory");
+    }
+    if (button.hasAttribute("data-show-map")) {
+      const container = document.getElementById("decision-map");
+      container.hidden = false;
+      const result = window.NightFindWuhanMap?.draw(
+        container,
+        state.result.items,
+      );
+      if (!result?.available)
+        container.textContent =
+          "地图暂不可用。选定门店后仍可打开导航，或在高德核对具体分店。";
+      else if (!result.pins)
+        toast("这些候选暂无可用坐标；选定后可按名称和地址在地图中查找。");
+    }
+    // Map popups use the real merchant action generated by wuhan_map.js.
+    if (button.dataset.realMerchant) {
+      detail.innerHTML = detailsView(
+        await merchantById(Number(button.dataset.realMerchant)),
+      );
+      dialog.showModal();
+    }
+  } catch (error) {
+    toast(error.message);
   }
+});
 
-  async function renderSuggestionsPage() {
-    setActivePage("suggestions");
-    let summary = { total: 0, categories: [] };
-    try {
-      summary = await request("/api/suggestions/summary");
-    } catch (error) {
-      // The form remains available if the optional summary request fails.
-    }
-    app.innerHTML =
-      '<section class="page-intro"><span class="eyebrow">A NOTE FROM YOU</span>' +
-        '<h1>有想法，就告诉我们。</h1>' +
-        '<p>一条小建议，也许就能让下一次选择变得更顺手。</p></section>' +
-      '<section class="suggestion-layout">' +
-        '<form id="suggestion-form" class="suggestion-form">' +
-          '<div class="form-heading"><span class="form-flower">✿</span><div><h2>写下你的想法</h2>' +
-            '<p>不用正式，想到什么就写什么。</p></div></div>' +
-          '<label>这条建议属于哪一类？<select name="category">' +
-            selectOptions(["功能建议", "商家信息", "使用体验", "其他"], "功能建议") +
-          "</select></label>" +
-          '<label>你想告诉我们什么？<textarea name="message" rows="7" maxlength="2000" required placeholder="比如：希望可以按营业时间筛选，或者补充素食选项…"></textarea></label>' +
-          '<div class="form-bottom"><span>请不要填写密码、电话等敏感个人信息。</span>' +
-            '<button class="button-primary" type="submit">提交建议 <span>↗</span></button></div>' +
-        "</form>" +
-        '<aside class="suggestion-aside"><div class="note-illustration">🌱</div>' +
-          '<h3>让夜寻慢慢长好</h3><p>我们会把大家的建议作为产品改进参考。当前是研究原型，暂不提供公开回复或处理进度。</p>' +
-          '<div class="suggestion-count"><strong>' + summary.total + "</strong><span>条建议已收到</span></div>" +
-          (summary.categories || []).map(function (item) {
-            return '<div class="category-count"><span>' + escapeHtml(item.category) +
-              '</span><b>' + item.count + "</b></div>";
-          }).join("") +
-        "</aside></section>";
-    document.getElementById("suggestion-form").addEventListener("submit", submitSuggestion);
-  }
-
-  async function submitSuggestion(event) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const button = form.querySelector("button[type=submit]");
-    button.disabled = true;
-    try {
-      const values = Object.fromEntries(new FormData(form));
-      await request("/api/suggestions", {
-        method: "POST",
-        body: values
-      });
-      showToast("收到啦，谢谢你愿意帮夜寻变得更好。");
-      await renderSuggestionsPage();
-    } catch (error) {
-      showToast(error.message);
-      button.disabled = false;
-    }
-  }
-
-  /* Tonight List: saved items belong to the browser's visitor session. */
-  function refreshActionButtons() {
-    const savedCount = document.getElementById("saved-count");
-    if (savedCount) savedCount.textContent = savedIds.size;
-    document.querySelectorAll("[data-favorite]").forEach(function (button) {
-      const isSaved = savedIds.has(Number(button.dataset.favorite));
-      button.classList.toggle("is-active", isSaved);
-      button.setAttribute("aria-pressed", String(isSaved));
-      if (button.closest(".chat-merchant-actions")) {
-        button.textContent = isSaved ? "♥ 已留" : "♡ 留下";
-      } else {
-        button.textContent = isSaved ? "♥ 已收藏" : "♡ 今晚清单";
-      }
-    });
-    document.querySelectorAll("[data-compare]").forEach(function (button) {
-      const selected = comparisonIds.has(Number(button.dataset.compare));
-      button.classList.toggle("is-active", selected);
-      button.setAttribute("aria-pressed", String(selected));
-      button.textContent = selected ? "✓ 已选" : "⇄ 对比";
-    });
-    renderCompareTray();
-  }
-
-  async function toggleFavorite(merchantId) {
-    const active = !savedIds.has(merchantId);
-    try {
-      await request("/api/favorites", {
-        method: "POST",
-        body: { merchant_id: merchantId, active: active }
-      });
-      if (active) savedIds.add(merchantId);
-      else savedIds.delete(merchantId);
-      showToast(active ? "已经放进今晚清单啦。" : "已从今晚清单移除。");
-      if (currentPage === "saved") await renderSavedPage();
-      refreshActionButtons();
-    } catch (error) {
-      showToast(error.message);
-    }
-  }
-
-  /* Compare selection remains in memory until the visitor clears it. */
-  async function toggleComparison(merchantId) {
-    if (comparisonIds.has(merchantId)) {
-      comparisonIds.delete(merchantId);
-      refreshActionButtons();
-      return;
-    }
-    if (comparisonIds.size >= 3) {
-      showToast("一次最多对比三家，先移除一家再选吧。");
-      return;
-    }
-    try {
-      const merchant = await request("/api/merchants/" + merchantId);
-      comparisonIds.set(merchantId, merchant.name);
-      refreshActionButtons();
-      if (comparisonIds.size === 2) {
-        showToast("已选两家，可以开始对比啦。");
-      }
-    } catch (error) {
-      showToast(error.message);
-    }
-  }
-
-  function renderCompareTray() {
-    if (!compareTray) return;
-    if (!comparisonIds.size) {
-      compareTray.hidden = true;
-      compareTray.innerHTML = "";
-      return;
-    }
-    compareTray.hidden = false;
-    const names = Array.from(comparisonIds.values()).map(escapeHtml).join("、");
-    compareTray.innerHTML =
-      '<div class="compare-tray-summary"><b>已选 ' + comparisonIds.size +
-      ' / 3 家</b><small>' + names + "</small></div>" +
-      '<button type="button" class="soft-action" data-clear-compare="1">清空</button>' +
-      '<button type="button" class="button-primary" data-open-compare="1"' +
-        (comparisonIds.size < 2 ? " disabled" : "") + '>一起比较 →</button>';
-  }
-
-  async function showComparison() {
-    const ids = Array.from(comparisonIds.keys());
-    if (ids.length < 2 || ids.length > 3) {
-      showToast("请先选择两到三家餐厅。");
-      return;
-    }
-    try {
-      const params = new URLSearchParams({ ids: ids.join(",") });
-      const known = conversationContext.known || [];
-      if (known.includes("scene")) params.set("scene", conversationContext.scene);
-      const result = await request("/api/compare?" + params.toString());
-      const winner = result.summary.recommended_id;
-      const cols = result.items.map(function (merchant) {
-        const isTop = merchant.id === winner;
-        const highlights = merchant.highlights.map(function (label) {
-          return "<span>" + escapeHtml(label) + "</span>";
-        }).join("");
-        return '<article class="compare-column ' + (isTop ? "top" : "") + '">' +
-          '<div class="dish-emoji" aria-hidden="true">' +
-            cuisineEmoji(merchant.cuisine) + "</div>" +
-          '<h3>' + escapeHtml(merchant.name) + "</h3>" +
-          '<div class="compare-metric"><span>人均</span><b>¥' + merchant.price + "</b></div>" +
-          '<div class="compare-metric"><span>预计等位</span><b>' + merchant.wait + " 分钟</b></div>" +
-          '<div class="compare-metric"><span>菜系</span><b>' + escapeHtml(merchant.cuisine) + "</b></div>" +
-          '<div class="compare-metric"><span>商圈</span><b>' + escapeHtml(merchant.district) + "</b></div>" +
-          '<div class="compare-metric"><span>演示评分</span><b>★ ' +
-            Number(merchant.rating).toFixed(1) + "</b></div>" +
-          '<div class="compare-tags">' + highlights + "</div>" +
-          '<div class="merchant-actions">' +
-            '<button class="soft-action" type="button" data-favorite="' +
-              merchant.id + '">♡ 今晚清单</button>' +
-          "</div>" +
-        "</article>";
-      }).join("");
-      compareDetail.innerHTML =
-        '<span class="eyebrow">CHOOSE WHAT MATTERS TO YOU</span>' +
-        '<h2>这几家，怎么选？</h2>' +
-        '<p class="compare-intro">按照人均、等位和口味，把优缺点放在一起看。</p>' +
-        '<div class="compare-columns ' + (result.items.length === 2 ? "two" : "") +
-          '">' + cols + "</div>" +
-        '<div class="compare-conclusion"><strong>夜寻的比较建议</strong><p>' +
-          escapeHtml(result.summary.reason) + "</p><ul>" +
-          result.summary.details.map(function (text) {
-            return "<li>" + escapeHtml(text) + "</li>";
-          }).join("") + "</ul></div>" +
-        '<p class="compare-disclaimer">' +
-          escapeHtml(result.summary.sample_notice) + "</p>";
-      compareDialog.showModal();
-      refreshActionButtons();
-    } catch (error) {
-      showToast(error.message);
-    }
-  }
-
-  async function renderSavedPage() {
-    setActivePage("saved");
-    app.innerHTML =
-      '<section class="page-intro"><span class="eyebrow">YOUR LITTLE DINNER LIST</span>' +
-        '<h1>把心动的店，留给今晚。</h1>' +
-        '<p>收藏会留在当前浏览器的访客会话中，换设备不会自动同步。</p></section>' +
-      '<div class="saved-hero"><div><strong>今晚不必一下子决定</strong>' +
-        '<p>先记下喜欢的几家，再挑两三家放到一起比较。</p></div>' +
-        '<span class="saved-illustration" aria-hidden="true">🌿</span></div>' +
-      '<div id="saved-content"><div class="empty-state">正在翻翻今晚的清单…</div></div>';
-
-    try {
-      const result = await request("/api/saved");
-      if (currentPage !== "saved") return;
-      const merchants = result.items || [];
-      savedIds = new Set(merchants.map(function (item) { return item.id; }));
-      const content = document.getElementById("saved-content");
-      if (merchants.length) {
-        content.innerHTML = '<div class="directory-toolbar"><span>记下了 ' +
-          merchants.length + ' 家店</span><span>可以收藏、查看或加入对比</span></div>' +
-          '<div class="saved-grid">' +
-          merchants.map(function (merchant) {
-            return merchantCard(merchant, true);
-          }).join("") + '</div>' +
-          '<div class="saved-actions"><button type="button" class="button-primary" ' +
-            'data-page="merchants">再逛逛商家小册 →</button></div>';
-      } else {
-        content.innerHTML =
-          '<div class="saved-empty"><span class="empty-icon">🍵</span>' +
-            '<h2>今晚的清单还是空的</h2>' +
-            '<p>看到喜欢的店，点一下“今晚清单”就能留在这里。</p>' +
-            '<button class="button-primary" type="button" data-page="merchants">去看看有什么好吃的 →</button>' +
-          "</div>";
-      }
-      refreshActionButtons();
-    } catch (error) {
-      showToast(error.message);
-    }
-  }
-
-  async function navigate(page) {
-    if (currentPage === "merchants" && page !== "merchants" && window.NightFindWuhanMap) {
-      window.NightFindWuhanMap.dispose();
-    }
-    if (page === "chat") {
-      renderChatPage();
-    } else if (page === "merchants") {
-      await renderMerchantPage();
-    } else if (page === "suggestions") {
-      await renderSuggestionsPage();
-    } else if (page === "saved") {
-      await renderSavedPage();
-    }
-    refreshActionButtons();
-  }
-
-  document.addEventListener("click", function (event) {
-    const pageButton = event.target.closest("[data-page]");
-    if (pageButton) {
-      navigate(pageButton.dataset.page);
-      return;
-    }
-    const osmSwitch = event.target.closest("[data-osm-view]");
-    if (osmSwitch) {
-      realMapMode = osmSwitch.dataset.osmView === "map" ? "map" : "list";
-      updateRealMapView();
-      return;
-    }
-    const realMerchant = event.target.closest("[data-real-merchant]");
-    if (realMerchant) {
-      showRealMerchant(Number(realMerchant.dataset.realMerchant));
-      return;
-    }
-    const realPageButton = event.target.closest("[data-real-page]");
-    if (realPageButton && !realPageButton.disabled) {
-      renderRealCatalog(Number(realPageButton.dataset.realPage));
-      return;
-    }
-    const quickButton = event.target.closest("[data-quick-prompt]");
-    if (quickButton) {
-      sendQuickPrompt(quickButton.dataset.quickPrompt);
-      return;
-    }
-    if (event.target.closest("[data-reset-chat]")) {
-      conversation = [];
-      conversationContext = {};
-      seenRecommendationIds.clear();
-      renderChatPage();
-      showToast("从头聊聊，今晚重新挑。");
-      return;
-    }
-    const favoriteButton = event.target.closest("[data-favorite]");
-    if (favoriteButton) {
-      toggleFavorite(Number(favoriteButton.dataset.favorite));
-      return;
-    }
-    const compareButton = event.target.closest("[data-compare]");
-    if (compareButton) {
-      toggleComparison(Number(compareButton.dataset.compare));
-      return;
-    }
-    if (event.target.closest("[data-open-compare]")) {
-      showComparison();
-      return;
-    }
-    if (event.target.closest("[data-clear-compare]")) {
-      comparisonIds.clear();
-      refreshActionButtons();
-      return;
-    }
-    const merchantButton = event.target.closest("[data-merchant]");
-    if (merchantButton) {
-      showMerchant(Number(merchantButton.dataset.merchant));
-    }
-  });
-
-  document.querySelector(".dialog-close").addEventListener("click", function () {
-    dialog.close();
-  });
-
-  dialog.addEventListener("click", function (event) {
-    if (event.target === dialog) dialog.close();
-  });
-
-  document.querySelector(".compare-close").addEventListener("click", function () {
-    compareDialog.close();
-  });
-  compareDialog.addEventListener("click", function (event) {
-    if (event.target === compareDialog) compareDialog.close();
-  });
-
-  async function start() {
-    try {
-      const bootstrap = await request("/api/bootstrap");
-      districts = bootstrap.districts || [];
-      aiEnabled = Boolean(bootstrap.ai_enabled);
-      savedIds = new Set(bootstrap.favorites || []);
-      renderChatPage();
-      refreshActionButtons();
-    } catch (error) {
-      app.innerHTML = '<div class="empty-state">暂时连接不上夜寻服务。请确认终端里的服务仍在运行，然后刷新页面。</div>';
-      showToast(error.message);
-    }
-  }
-
-  start();
-})();
+dialog.addEventListener("click", (event) => {
+  if (event.target === dialog) dialog.close();
+});
+try {
+  const response = await request("/api/real-favorites");
+  state.saved = new Set(response.items.map((item) => item.id));
+} catch (error) {
+  toast(error.message);
+}
+navigate("decision");
