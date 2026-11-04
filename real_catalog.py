@@ -202,6 +202,11 @@ def _validate(record):
             if not low <= val <= high:
                 raise ValueError(field + " 超出合法范围")
             item[field] = val
+    # A coordinate is a WGS84 latitude/longitude pair. A half-filled
+    # pair would otherwise combine an imported value with a stale value
+    # during UPSERT, producing a location that was never verified.
+    if (item["latitude"] is None) != (item["longitude"] is None):
+        raise ValueError("纬度和经度必须同时填写或同时留空")
     raw_price = record.get("price_per_person")
     try:
         item["price_per_person"] = int(raw_price) if raw_price not in ("", None) else None
