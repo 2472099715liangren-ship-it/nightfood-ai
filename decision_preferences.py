@@ -8,14 +8,18 @@ import json
 import math
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.error import URLError
 from urllib.request import Request, urlopen
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from real_catalog import WUHAN_DISTRICTS
 
-LOCAL_ZONE = ZoneInfo("Asia/Shanghai")
+try:
+    LOCAL_ZONE = ZoneInfo("Asia/Shanghai")
+except ZoneInfoNotFoundError:
+    # Windows may lack IANA data. Modern Shanghai uses UTC+8 without DST.
+    LOCAL_ZONE = timezone(timedelta(hours=8), "Asia/Shanghai")
 # Approximate district centers, not device locations or route destinations.
 LANDMARKS = {
     "江汉路": (30.586, 114.291, "江汉区"),

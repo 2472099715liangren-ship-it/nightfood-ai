@@ -37,6 +37,19 @@ class PreferenceTests(unittest.TestCase):
         self.no_ai.start()
         self.addCleanup(self.no_ai.stop)
 
+    def test_windows_without_iana_data_keeps_beijing_time(self):
+        import importlib.util
+        from zoneinfo import ZoneInfoNotFoundError
+
+        path = Path(__file__).resolve().parents[1] / "decision_preferences.py"
+        spec = importlib.util.spec_from_file_location("windows_preferences", path)
+        module = importlib.util.module_from_spec(spec)
+        with patch("zoneinfo.ZoneInfo", side_effect=ZoneInfoNotFoundError("missing")):
+            spec.loader.exec_module(module)
+        context, _ = module.parse_request("今晚七点，四个人，江汉路，总预算300元", now=NOW)
+        self.assertEqual(context["arrival"], "2026-11-04T19:00+08:00")
+        self.assertEqual(module.per_person_budget(context), 75)
+
     def test_full_request_and_total_budget(self):
         context, mode = parse_request(
             "今晚七点，四个人在江汉路附近，总共三百元，想吃湖北菜", now=NOW
