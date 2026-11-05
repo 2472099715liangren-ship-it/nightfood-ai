@@ -1,159 +1,255 @@
-/* Wuhan real-restaurant map, intentionally loaded only when visitor opens Map.
- * Tiles: OSM for low-traffic local development only. Replace provider before
- * public scale-up. See https://operations.osmfoundation.org/policies/tiles/.
+/* Local WGS84 basemap and source coordinates share one projection.
+ * Geographic sources and limitations: static/map/README.md.
+ * No API key, remote JavaScript, or online tiles are needed for the default map.
  */
-window.NightFindWuhanMap = (function () {
+window.NightFindWuhanMap = (() => {
   "use strict";
-  let map = null;
-  let markerLayer = null;
-  let currentContainer = null;
-
-  function escapeHtml(value) {
-    return String(value == null ? "" : value).replace(
+  let map, markerLayer, labelLayer, currentContainer, allBounds;
+  let generation = 0;
+  let basemapRequest;
+  const markers = new Map();
+  const escape = (value) =>
+    String(value ?? "").replace(
       /[&<>"']/g,
-      function (char) {
-        return {
+      (char) =>
+        ({
           "&": "&amp;",
           "<": "&lt;",
           ">": "&gt;",
           '"': "&quot;",
           "'": "&#39;",
-        }[char];
-      },
+        })[char],
     );
-  }
 
   function dispose() {
+    generation += 1;
     if (map) map.remove();
-    map = null;
-    markerLayer = null;
-    currentContainer = null;
+    map = markerLayer = labelLayer = currentContainer = allBounds = null;
+    markers.clear();
   }
 
-  function draw(container, restaurants) {
-    if (!container) return { available: false, pins: 0 };
-    if (!window.L) {
-      container.innerHTML =
-        '<div class="empty-state">地图组件暂时无法加载。请检查网络连接，仍可使用列表浏览真实门店。</div>';
-      return { available: false, pins: 0 };
+  function loadBasemap() {
+    if (!basemapRequest) {
+      basemapRequest = fetch("/map/wuhan-basemap.geojson")
+        .then((response) => {
+          if (!response.ok) throw new Error("武汉底图文件读取失败");
+          return response.json();
+        })
+        .catch((error) => {
+          basemapRequest = null; // Allow a retry after a temporary local server error.
+          throw error;
+        });
     }
-    if (currentContainer !== container) {
-      dispose();
-      map = L.map(container, { preferCanvas: true, zoomControl: true }).setView(
-        [30.59, 114.3],
-        10,
-      );
-      container.dataset.tiles = "loading";
-      const tiles = L.tileLayer(
-        "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-        {
-          maxZoom: 18,
-          attribution:
-            '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>',
-        },
-      ).addTo(map);
-      tiles.on("tileerror", function () {
-        container.dataset.tiles = "error";
-      });
-      currentContainer = container;
-      markerLayer = L.layerGroup().addTo(map);
+    return basemapRequest;
+  }
+
+  function addBasemap(data) {
+    const group = (layer) => ({
+      type: "FeatureCollection",
+      features: data.features.filter(
+        (feature) => feature.properties.layer === layer,
+      ),
+    });
+    const vector = (layer, style) =>
+      L.geoJSON(group(layer), {
+        style,
+        interactive: false,
+        pane: "basemap",
+      }).addTo(map);
+    vector("boundary", {
+      color: "#b6c7ae",
+      weight: 1,
+      fillColor: "#edf1e7",
+      fillOpacity: 0.7,
+    });
+    vector("lake", {
+      color: "#a5cbd0",
+      weight: 1,
+      fillColor: "#b4d7d9",
+      fillOpacity: 0.9,
+    });
+    vector("river", { color: "#afd0d6", weight: 12, opacity: 1 });
+    vector("road", { color: "#d7d8c9", weight: 5, opacity: 1 });
+    vector("road", { color: "#fffdf4", weight: 2.5, opacity: 1 });
+    labelLayer = L.layerGroup().addTo(map);
+    const labelFeatures = data.features.filter(
+      (feature) =>
+        ["road", "park", "station", "water_label"].includes(
+          feature.properties.layer,
+        ) && feature.properties.name,
+    );
+
+    // Screen-space spacing keeps place names readable at every zoom level.
+    function updateLabels() {
+      labelLayer.clearLayers();
+      const occupied = new Set();
+      const zoom = map.getZoom();
+      for (const feature of labelFeatures) {
+        const { layer, name } = feature.properties;
+        if (zoom < (layer === "station" ? 14 : layer === "park" ? 13 : 10))
+          continue;
+        const coords =
+          feature.geometry.type === "Point"
+            ? feature.geometry.coordinates
+            : feature.geometry.coordinates[
+                Math.floor(feature.geometry.coordinates.length / 2)
+              ];
+        const point = L.latLng(coords[1], coords[0]);
+        if (!map.getBounds().contains(point)) continue;
+        const pixel = map.latLngToContainerPoint(point);
+        const cell = `${Math.floor(pixel.x / 105)}:${Math.floor(pixel.y / 36)}`;
+        if (occupied.has(cell)) continue;
+        occupied.add(cell);
+        L.marker(point, {
+          interactive: false,
+          pane: "placeLabels",
+          icon: L.divIcon({
+            className: `map-place-label label-${layer}`,
+            html: escape(name),
+            iconSize: [100, 20],
+            iconAnchor: [50, 10],
+          }),
+        }).addTo(labelLayer);
+      }
     }
-    markerLayer.clearLayers();
+    map.on("zoomend moveend", updateLabels);
+    updateLabels();
+  }
+
+  function tryStreetTiles(container, version) {
+    // The local map is always underneath. A blocked tile service can never
+    // turn it into a blank canvas. Do not prefetch or bulk-download OSM tiles.
+    const tiles = L.tileLayer(
+      "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      {
+        maxZoom: 18,
+        pane: "streetTiles",
+      },
+    );
+    container.dataset.streets = "loading";
+    tiles.on("tileerror", () => {
+      if (version !== generation) return;
+      tiles.remove();
+      map.getPane("placeLabels").style.opacity = "1";
+      container.dataset.streets = "unavailable";
+    });
+    tiles.on("load", () => {
+      if (version !== generation || container.dataset.streets === "unavailable")
+        return;
+      map.getPane("placeLabels").style.opacity = "0";
+      container.dataset.streets = "ready";
+    });
+    tiles.addTo(map);
+  }
+
+  function popup(item, lat, lng) {
+    const price =
+      item.price_per_person != null
+        ? `参考人均 ¥${item.price_per_person}`
+        : item.price_range_min != null && item.price_range_max != null
+          ? `${item.price_range_basis === "dish" ? "菜品参考价" : "来源参考价"} ¥${item.price_range_min}–${item.price_range_max}`
+          : "尚未收录参考价格";
+    return `<div class="real-map-popup"><span class="eyebrow">武汉 · 真实商家</span>
+      <h3>${escape(item.name)}</h3><p>${escape(item.address || item.district || "来源坐标点位")}</p>
+      <p class="map-popup-price">${escape(price)}</p>
+      ${(item.priced_menu || []).map((dish) => `<p>${escape(dish.dish_name)} ¥${escape(dish.price)} ${escape(dish.price_unit)}</p>`).join("")}
+      <small>${lat.toFixed(6)}, ${lng.toFixed(6)} · WGS84<br>${escape(item.source_name || "公开来源")} · 非实时营业信息</small>
+      <button type="button" class="button-primary" data-real-merchant="${Number(item.id)}">查看完整资料 ↗</button></div>`;
+  }
+
+  async function draw(container, restaurants, { overview = false } = {}) {
+    if (!container || !window.L) return { available: false, pins: 0 };
+    dispose();
+    const version = generation;
+    currentContainer = container;
+    container.dataset.basemap = "loading";
+    map = L.map(container, {
+      preferCanvas: true,
+      minZoom: 9,
+      maxZoom: 18,
+      scrollWheelZoom: false,
+    }).setView([30.585, 114.3], 11);
+    map.createPane("basemap").style.zIndex = 200;
+    map.createPane("streetTiles").style.zIndex = 250;
+    map.createPane("placeLabels").style.zIndex = 450;
+    map.getPane("placeLabels").style.pointerEvents = "none";
+    map.attributionControl.addAttribution(
+      '底图：© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> · <a href="https://www.naturalearthdata.com/about/terms-of-use/" target="_blank" rel="noopener noreferrer">Natural Earth</a>',
+    );
+    L.control.scale({ imperial: false, position: "bottomleft" }).addTo(map);
+    markerLayer = L.layerGroup().addTo(map);
     const bounds = [];
-    restaurants.forEach(function (restaurant) {
-      const lat = Number(restaurant.latitude);
-      const lng = Number(restaurant.longitude);
+    for (const item of restaurants) {
+      const lat = Number(item.latitude),
+        lng = Number(item.longitude);
       if (
+        item.latitude == null ||
+        item.longitude == null ||
         !Number.isFinite(lat) ||
         !Number.isFinite(lng) ||
-        restaurant.latitude == null ||
-        restaurant.longitude == null
+        lat < 29.8 ||
+        lat > 31.5 ||
+        lng < 113.5 ||
+        lng > 115.2
       )
-        return;
-      if (lat < 29.8 || lat > 31.5 || lng < 113.5 || lng > 115.2) return;
-
-      const verified = restaurant.data_quality === "verified";
-      const community = restaurant.data_quality === "community";
+        continue;
       const marker = L.circleMarker([lat, lng], {
-        radius: 9,
-        color: verified ? "#3f6a49" : community ? "#718a9c" : "#9b8058",
-        fillColor: verified ? "#80a97e" : community ? "#a9c1d0" : "#d8c39b",
-        fillOpacity: 0.92,
+        radius: 6,
+        color: "#fffef9",
         weight: 2,
+        fillColor: "#4f805f",
+        fillOpacity: 0.9,
       }).addTo(markerLayer);
-      const price =
-        restaurant.price_per_person != null
-          ? "人均约 ¥" + restaurant.price_per_person
-          : restaurant.price_range_min != null &&
-              restaurant.price_range_max != null
-            ? "参考价 ¥" +
-              restaurant.price_range_min +
-              "–" +
-              restaurant.price_range_max
-            : "价格待核实";
-      const dateNote = restaurant.source_checked_at
-        ? "来源核查 " + restaurant.source_checked_at
-        : restaurant.source_collected_at
-          ? "在线采集 " + restaurant.source_collected_at
-          : "原资料归档 " + (restaurant.source_archived_at || "日期未知");
-      const menu =
-        (restaurant.priced_menu || [])
-          .slice(0, 3)
-          .map(function (dish) {
-            return (
-              escapeHtml(dish.dish_name) +
-              " ¥" +
-              escapeHtml(dish.price) +
-              " " +
-              escapeHtml(dish.price_unit)
-            );
-          })
-          .join("<br>") || "暂无可核验单品价格";
-      const quality = verified
-        ? "人工核验通过"
-        : community
-          ? "OSM 社区收录 · 营业状态未核实"
-          : "网页收录 · 营业状态未人工核实";
-      marker.bindPopup(
-        '<div class="real-map-popup"><strong>' +
-          escapeHtml(restaurant.name) +
-          "</strong><p>" +
-          escapeHtml(restaurant.district) +
-          " · " +
-          escapeHtml(restaurant.address) +
-          '</p><span class="real-map-quality ' +
-          (verified ? "verified" : community ? "community" : "web-listing") +
-          '">' +
-          escapeHtml(quality) +
-          "</span><p>" +
-          escapeHtml(price) +
-          " · " +
-          escapeHtml(dateNote) +
-          "</p><p>" +
-          escapeHtml(lat.toFixed(6)) +
-          ", " +
-          escapeHtml(lng.toFixed(6)) +
-          " · WGS84</p><p>" +
-          menu +
-          '</p><button type="button" data-real-merchant="' +
-          restaurant.id +
-          '">查看门店资料 →</button></div>',
+      marker.bindPopup(popup(item, lat, lng), { maxWidth: 290 });
+      marker.on("popupopen", () =>
+        marker.setStyle({ radius: 9, fillColor: "#244d3b" }),
       );
+      marker.on("popupclose", () =>
+        marker.setStyle({ radius: 6, fillColor: "#4f805f" }),
+      );
+      markers.set(Number(item.id), marker);
       bounds.push([lat, lng]);
-    });
-    if (bounds.length) {
-      map.fitBounds(L.latLngBounds(bounds).pad(0.17), {
-        maxZoom: 14,
-        animate: false,
-      });
-    } else {
-      map.setView([30.59, 114.3], 10);
     }
-    window.requestAnimationFrame(function () {
-      if (map) map.invalidateSize();
-    });
+    allBounds = bounds.length ? L.latLngBounds(bounds).pad(0.12) : null;
+    if (!overview && allBounds)
+      map.fitBounds(allBounds, { maxZoom: 14, animate: false });
+    container.dataset.pins = bounds.length;
+    try {
+      const data = await loadBasemap();
+      if (version !== generation || !container.isConnected)
+        return { available: false, pins: 0 };
+      addBasemap(data);
+      container.dataset.basemap = "ready";
+      tryStreetTiles(container, version);
+    } catch {
+      if (version !== generation) return { available: false, pins: 0 };
+      container.dataset.basemap = "error";
+      // Clearly report a missing local asset; never present a blank canvas as a loaded map.
+      const notice = L.control({ position: "topright" });
+      notice.onAdd = () => {
+        const element = L.DomUtil.create("div", "map-load-error");
+        element.textContent =
+          "武汉底图文件读取失败，请刷新页面；仍可打开商家导航。";
+        return element;
+      };
+      notice.addTo(map);
+    }
+    map.invalidateSize();
     return { available: true, pins: bounds.length };
   }
 
-  return { draw: draw, dispose: dispose };
+  function focus(id) {
+    const marker = markers.get(Number(id));
+    if (!map || !marker) return false;
+    map.setView(marker.getLatLng(), 15, { animate: false });
+    marker.openPopup();
+    currentContainer.scrollIntoView({ behavior: "smooth", block: "center" });
+    return true;
+  }
+
+  function fitAll() {
+    if (map && allBounds)
+      map.fitBounds(allBounds, { maxZoom: 14, animate: false });
+  }
+  return { draw, dispose, focus, fitAll };
 })();

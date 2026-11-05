@@ -132,17 +132,15 @@ def describe_merchant(merchant):
         else None
     )
     item["quality_label"] = {
-        "verified": "人工核验资料",
+        "verified": "门店来源资料",
         "community": "OSM 社区资料",
-        "web_listing": "公开网页资料，营业状态未人工核验",
+        "web_listing": "公开网页资料",
     }.get(item.get("data_quality"), "资料待确认")
     item["price_notice"] = "来源参考价，实际消费以门店为准"
     if item.get("source_checked_at"):
-        item["evidence_label"] = "逐店/网页核查 " + item["source_checked_at"]
+        item["evidence_label"] = "来源日期 " + item["source_checked_at"]
     elif item.get("source_collected_at"):
-        item["evidence_label"] = (
-            "在线采集 " + item["source_collected_at"] + "，未逐店核实营业"
-        )
+        item["evidence_label"] = "在线采集 " + item["source_collected_at"]
     elif item.get("source_archived_at"):
         item["evidence_label"] = (
             "资料归档 " + item["source_archived_at"] + "，本次未重新采集"

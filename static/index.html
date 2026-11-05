@@ -3,13 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#f5f8f0" />
+    <meta name="theme-color" content="#f2f6ee" />
     <title>夜寻 · 今晚去哪吃</title>
     <link rel="stylesheet" href="/style.css" />
     <link rel="stylesheet" href="/decision.css" />
     <link rel="stylesheet" href="/vendor/leaflet/leaflet.css" />
   </head>
   <body>
+    <div class="side-botanical botanical-left" aria-hidden="true"></div>
+    <div class="side-botanical botanical-right" aria-hidden="true"></div>
     <header class="site-header">
       <a class="brand" href="/"
         ><span class="brand-mark">夜</span
@@ -24,14 +26,21 @@
           今晚清单 <span id="saved-count">0</span>
         </button>
       </nav>
+      <span class="header-location"
+        ><span class="status-dot"></span> 武汉 · 今晚好好吃饭</span
+      >
     </header>
     <main id="app" class="page-shell"><p>正在准备门店资料…</p></main>
     <div id="compare-tray" class="compare-tray" aria-live="polite" hidden></div>
     <footer class="site-footer">
-      <span>夜寻 · 武汉餐饮决策原型</span
-      ><span>资料有来源，未知项有说明；营业与消费请向门店确认。</span>
+      <span>夜寻 NIGHTFIND · 在武汉，发现一顿好饭</span
+      ><span>跟着心意挑选，带着依据出发。</span>
     </footer>
-    <dialog id="merchant-dialog" class="merchant-dialog">
+    <dialog
+      id="merchant-dialog"
+      class="merchant-dialog"
+      aria-label="商家资料与对比"
+    >
       <button class="dialog-close" data-close aria-label="关闭">×</button>
       <div id="merchant-detail"></div>
     </dialog>

@@ -493,7 +493,9 @@ def public_real_merchants(connection, district="", keyword="", limit=100, offset
         "(SELECT i.taken_at FROM recent_images AS i "
         " WHERE i.merchant_id=real_merchants.id ORDER BY "
         "CASE i.image_type WHEN 'storefront' THEN 0 WHEN 'dish' THEN 1 ELSE 2 END,i.id LIMIT 1) AS cover_image_taken_at "
-        "FROM real_merchants WHERE " + where + " ORDER BY updated_at DESC,id DESC "
+        "FROM real_merchants WHERE " + where + " ORDER BY "
+        "CASE WHEN price_per_person IS NOT NULL OR price_range_min IS NOT NULL THEN 0 "
+        "WHEN source_name != 'OpenStreetMap' THEN 1 ELSE 2 END, updated_at DESC,id DESC "
         "LIMIT ? OFFSET ?",
         (
             [_fresh_cutoff()]

@@ -46,7 +46,9 @@ class PreferenceTests(unittest.TestCase):
         module = importlib.util.module_from_spec(spec)
         with patch("zoneinfo.ZoneInfo", side_effect=ZoneInfoNotFoundError("missing")):
             spec.loader.exec_module(module)
-        context, _ = module.parse_request("今晚七点，四个人，江汉路，总预算300元", now=NOW)
+        context, _ = module.parse_request(
+            "今晚七点，四个人，江汉路，总预算300元", now=NOW
+        )
         self.assertEqual(context["arrival"], "2026-11-04T19:00+08:00")
         self.assertEqual(module.per_person_budget(context), 75)
 
@@ -398,9 +400,32 @@ class DecisionHttpTests(unittest.TestCase):
                     "/api-client.js",
                     "/decision-view.js",
                     "/decision.css",
+                    "/wuhan_map.js",
+                    "/botanical.svg",
+                    "/map/wuhan-basemap.geojson",
                 ):
                     with urlopen(base + asset) as response:
                         self.assertEqual(response.status, 200)
+                        if asset.endswith(".geojson"):
+                            basemap = json.load(response)
+                            self.assertEqual(basemap["type"], "FeatureCollection")
+                            roads = [
+                                feature
+                                for feature in basemap["features"]
+                                if feature["properties"]["layer"] == "road"
+                            ]
+                            self.assertGreaterEqual(len(roads), 500)
+                            self.assertIn(
+                                "徐东大街",
+                                [road["properties"]["name"] for road in roads],
+                            )
+                            self.assertTrue(
+                                any(
+                                    feature["properties"]["layer"] == "lake"
+                                    and feature["geometry"]["type"] == "Polygon"
+                                    for feature in basemap["features"]
+                                )
+                            )
             finally:
                 server.shutdown()
                 server.server_close()

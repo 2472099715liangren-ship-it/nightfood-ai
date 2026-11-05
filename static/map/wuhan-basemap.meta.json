@@ -1,0 +1,59 @@
+{
+  "generated_at": "2026-11-05",
+  "crs": "WGS84 / EPSG:4326",
+  "sha256": "6e749d4f90f6bbd1b413af7c5e213ce9046817851ac3d8f983c7fa05fc02ae4b",
+  "feature_counts": {
+    "boundary": 1,
+    "road": 600,
+    "park": 64,
+    "station": 275,
+    "water_label": 54,
+    "lake": 19,
+    "river": 2
+  },
+  "sources": [
+    {
+      "file": "boundary.geojson",
+      "url": "https://github.com/whuyao/GeoClaw_Claude/blob/2ae23e3aa6d105748d8a4715e4d39f4f8c9c548e/data/wuhan/boundary.geojson",
+      "sha256": "1adfb90deafd9229ac0ee89a21dfd1f5a837c05b187f17f1838a362c7f821e0f",
+      "license": "OpenStreetMap ODbL-1.0"
+    },
+    {
+      "file": "roads_main.geojson",
+      "url": "https://github.com/whuyao/GeoClaw_Claude/blob/2ae23e3aa6d105748d8a4715e4d39f4f8c9c548e/data/wuhan/roads_main.geojson",
+      "sha256": "6c36cd9110bfab7d16a38251e70c7e86262bb8e15424f5c6e410cac44a3a08d5",
+      "license": "OpenStreetMap ODbL-1.0"
+    },
+    {
+      "file": "parks.geojson",
+      "url": "https://github.com/whuyao/GeoClaw_Claude/blob/2ae23e3aa6d105748d8a4715e4d39f4f8c9c548e/data/wuhan/parks.geojson",
+      "sha256": "e29011dcf73e2824edfd8260321344cdb0022c9e79dd6950be3fdbb5d360e0ac",
+      "license": "OpenStreetMap ODbL-1.0"
+    },
+    {
+      "file": "metro_stations.geojson",
+      "url": "https://github.com/whuyao/GeoClaw_Claude/blob/2ae23e3aa6d105748d8a4715e4d39f4f8c9c548e/data/wuhan/metro_stations.geojson",
+      "sha256": "2a01cc72418688de572fab7036f341a16b44c61c4b75d7800b43dd68fa1bfc25",
+      "license": "OpenStreetMap ODbL-1.0"
+    },
+    {
+      "file": "water.geojson",
+      "url": "https://github.com/whuyao/GeoClaw_Claude/blob/2ae23e3aa6d105748d8a4715e4d39f4f8c9c548e/data/wuhan/water.geojson",
+      "sha256": "6364140bbff74403737c3911bd8cb4d237583b3c7c0061f945fc74e278e30dd3",
+      "license": "OpenStreetMap ODbL-1.0"
+    },
+    {
+      "file": "ne_10m_lakes.geojson",
+      "url": "https://github.com/nvkelso/natural-earth-vector/blob/master/geojson/ne_10m_lakes.geojson",
+      "sha256": "2d036f53dedec578001c5c30c2959ee7d4eebc1306900fa4367c49929ec8f2d9",
+      "license": "Natural Earth public domain"
+    },
+    {
+      "file": "ne_10m_rivers_lake_centerlines.geojson",
+      "url": "https://github.com/nvkelso/natural-earth-vector/blob/master/geojson/ne_10m_rivers_lake_centerlines.geojson",
+      "sha256": "bb854a900ecbd3b408df46d5e16e3e0f974ba55993f9d8b5c26e855273c0905a",
+      "license": "Natural Earth public domain"
+    }
+  ],
+  "license": "ODbL-1.0; Natural Earth source portions are public domain"
+}

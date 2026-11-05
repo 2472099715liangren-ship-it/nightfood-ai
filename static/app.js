@@ -27,6 +27,7 @@ const state = {
   directoryPage: 0,
   keyword: "",
   district: "",
+  focusMerchant: null,
 };
 let toastTimer;
 let pageVersion = 0;
@@ -48,38 +49,56 @@ function renderTray() {
 
 function catalogSummary() {
   const stats = state.catalogStats;
-  if (!stats) return '<p class="source-note">正在读取真实资料库统计…</p>';
-  return `<p class="catalog-summary" data-catalog-count="${stats.public_total}">真实资料 ${stats.public_total} 家 · 有坐标 ${stats.mapped_total} 家 · 有来源菜品单价 ${stats.priced_menu_items} 条（${stats.priced_merchant_total} 家，其中有坐标 ${stats.priced_mapped_total} 家）</p>
-    <p class="source-note">资料范围为近五年。原归档与本次采集日期分别标注，缺失的价格、营业和地址不补造。</p>`;
+  if (!stats) return '<p class="source-note">正在读取武汉商家资料…</p>';
+  return `<div class="catalog-summary" data-catalog-count="${stats.public_total}">
+    <span><strong>${stats.public_total}</strong> 家真实来源商家</span>
+    <span><strong>${stats.mapped_total}</strong> 个地图点位</span>
+    <details><summary>资料覆盖说明 ↗</summary><p>近五年来源资料。已收录 ${stats.priced_merchant_total} 家门店的 ${stats.priced_menu_items} 条菜品单价，其中 ${stats.priced_mapped_total} 家有坐标。未收录的价格、电话和营业时间会在资料卡中注明；记录不代表实时营业。</p></details></div>`;
 }
 
 function renderDecision() {
   window.NightFindWuhanMap?.dispose();
   const result = state.result;
-  root.innerHTML = `<section class="page-intro"><span class="eyebrow">从想吃什么，到决定去哪</span><h1>今晚，选一家适合的店。</h1>
-    <p>直接问店名、菜单或价格，也可以说明人数、预算、位置和时间。对话与地图查询同一个真实商家库。</p>${catalogSummary()}</section>
-    <section class="decision-input"><h2>说说你的打算</h2>
-      <div id="conversation-log" aria-live="polite">${state.history
-        .slice(-6)
+  const mode = result?.mode === "ai" ? "AI 理解" : "本地解析";
+  const greeting = [
+    {
+      role: "assistant",
+      text: "你好，我是夜寻。\n今天想吃点什么？告诉我人数、预算和位置，一起挑一家合适的店。也可以直接查店名、菜单和价格。",
+    },
+  ];
+  root.innerHTML = `<section class="page-intro decision-intro"><div><span class="eyebrow">WUHAN · A LITTLE TASTE OF THE NIGHT</span>
+    <h1>把今晚，交给一顿<span>好饭。</span></h1><p>聊聊想吃什么，让选择简单一点。<br>从武汉真实商家里，找到合你心意的那一家。</p></div>
+    <div class="hero-art" aria-hidden="true"><svg viewBox="0 0 220 150" fill="none"><ellipse cx="111" cy="132" rx="77" ry="8" fill="#dce7d3"/><path d="M38 74h145c-4 38-30 56-72 56S43 112 38 74Z" fill="#e1ebd5" stroke="#779773" stroke-width="2"/><ellipse cx="111" cy="74" rx="73" ry="17" fill="#fafbf3" stroke="#779773" stroke-width="2"/><path d="M60 76c25-21 60-20 99-2M62 82c34-23 63-21 96-2M75 85c20-14 48-18 73-3" stroke="#b8ba83" stroke-width="3"/><path d="M127 62 167 17m-29 47 43-43" stroke="#7e8966" stroke-width="4" stroke-linecap="round"/><path d="M86 43c-13-13 11-15 1-29m23 35c-10-12 10-16 3-29" stroke="#a4b79a" stroke-width="2" stroke-linecap="round"/><path d="M47 61C24 57 19 43 21 32c20 1 31 11 26 29Z" fill="#ccddba"/><path d="m27 39 21 24" stroke="#8daa7d"/></svg><span>好好吃饭 · 慢慢选择</span></div></section>
+    <div class="decision-workspace"><section class="decision-input" aria-label="AI 对话区域">
+      <header class="chat-heading"><span class="helper-avatar" aria-hidden="true">夜</span><div><h2>和夜寻聊聊</h2><p>你的武汉餐饮小向导</p></div><span class="mode-pill">${mode} · 真实资料库</span></header>
+      <div id="conversation-log" class="chat-messages" role="log" aria-label="与夜寻的对话" aria-live="polite">${(state
+        .history.length
+        ? state.history
+        : greeting
+      )
+        .slice(-10)
         .map(
           (entry) =>
-            `<p class="conversation-${entry.role}"><strong>${entry.role === "user" ? "你" : "夜寻"}：</strong>${e(entry.text)}</p>`,
+            `<div class="message ${entry.role === "user" ? "user" : "assistant"}">${entry.role === "user" ? "" : '<span class="message-avatar" aria-hidden="true">夜</span>'}<div class="message-content"><span class="sr-only">${entry.role === "user" ? "你" : "夜寻"}：</span>${e(entry.text)}</div></div>`,
         )
-        .join("")}</div>
-      <form id="decision-form"><label class="sr-only" for="request-message">你的用餐需求</label><textarea id="request-message" name="message" maxlength="2000" required placeholder="例如：今晚七点，四个人在江汉路附近，总共三百元，想吃湖北菜。" ${state.busy ? "disabled" : ""}></textarea>
-        <div class="card-actions"><button class="button-primary" ${state.busy ? "disabled" : ""}>${state.busy ? "正在整理…" : "帮我挑选"}</button><button type="button" data-location ${state.busy ? "disabled" : ""}>使用当前位置</button><button type="button" data-reset ${state.busy ? "disabled" : ""}>重新开始</button></div></form>
-      <div class="quick-actions">${(result?.follow_up?.actions || ["武汉有哪些真实商家", "有哪些咖啡店", "查金贵源的菜单价格"]).map((message) => `<button data-message="${e(message)}" ${state.busy ? "disabled" : ""}>${e(message)}</button>`).join("")}</div>
-      <p class="source-note">${result?.mode === "ai" ? "本轮由 AI 提取条件，门店事实来自资料库。" : result?.mode === "fallback" ? "AI 暂不可用，本轮使用本地条件解析。" : "本地条件解析可直接使用；配置 AI 后可理解更灵活的表达。"}</p>
-    </section>
-    <section class="conditions" aria-label="已理解的条件"><h2>目前理解的需求</h2>${constraintsView(result?.constraints, result?.budget_per_person)}</section>
+        .join("")}
+        ${state.busy ? '<div class="thinking" role="status">夜寻正在整理你的需求 <span>···</span></div>' : ""}</div>
+      <div class="quick-actions"><span>试着问问</span>${(result?.follow_up?.actions || ["武汉有哪些真实商家", "有哪些咖啡店", "查金贵源的菜单价格"]).map((message) => `<button type="button" data-message="${e(message)}" ${state.busy ? "disabled" : ""}>${e(message)} ↗</button>`).join("")}</div>
+      <form id="decision-form" class="chat-composer"><label class="sr-only" for="request-message">你的用餐需求</label><textarea id="request-message" name="message" maxlength="2000" required placeholder="比如：今晚七点，四个人在江汉路附近，总共三百元，想吃湖北菜…" ${state.busy ? "disabled" : ""}></textarea>
+        <div class="composer-actions"><div><button type="button" data-location ${state.busy ? "disabled" : ""}>⌖ 我的位置</button><button type="button" data-reset ${state.busy ? "disabled" : ""}>↻ 重新聊</button></div><button type="submit" class="button-primary" ${state.busy ? "disabled" : ""}>${state.busy ? "正在寻找…" : "帮我找找 ↗"}</button></div></form>
+      ${result?.mode === "fallback" ? '<p class="source-note">AI 暂不可用，已切换本地条件解析。</p>' : ""}
+    </section><aside class="decision-aside"><section class="conditions" aria-label="已理解的条件"><span class="eyebrow">YOUR DINING NOTES</span><h2>今晚的用餐笔记</h2>${constraintsView(result?.constraints, result?.budget_per_person)}</section>
+      <section class="journey-note"><span class="eyebrow">一顿好饭，三步就好</span><ol><li><span>01</span><div><strong>聊聊你的想法</strong><small>人数、预算、位置与口味</small></div></li><li><span>02</span><div><strong>看看适合的店</strong><small>比较菜单、价格和真实位置</small></div></li><li><span>03</span><div><strong>选好，就出发</strong><small>打开地图，或联系门店</small></div></li></ol><button type="button" data-page="directory">去武汉地图逛逛 ↗</button></section></aside></div>
+    ${catalogSummary()}
     <section id="selected-place" ${state.selected ? "" : "hidden"}>${state.selected ? choiceView(state.selected) : ""}</section>
     ${
       result
-        ? `<section aria-live="polite"><h2>${result.stage === "clarify" ? "先确认一下" : result.stage === "catalog" ? "真实资料库查询结果" : "这次的候选"}</h2><p class="reply-text">${e(result.reply)}</p>
-      ${result.items.length ? `<div class="decision-grid">${merchantCards(result.items, state.saved, state.compared, true)}</div><div class="map-controls"><button data-show-map>在地图上看这几家</button></div><div id="decision-map" class="decision-map" hidden></div>` : ""}
+        ? `<section class="candidate-section" aria-live="polite"><div class="section-heading"><div><span class="eyebrow">PICK YOUR FAVORITE</span><h2>${result.stage === "clarify" ? "再补充一点，就更合适了" : result.stage === "catalog" ? "在武汉，为你找到这些店" : "这几家，值得你看看"}</h2></div>${result.items.length ? '<button type="button" data-show-map>⌖ 在地图上比较</button>' : ""}</div>
+      <p class="reply-text muted">${e(result.reply)}</p>
+      ${result.items.length ? `<div class="decision-grid">${merchantCards(result.items, state.saved, state.compared, true)}</div><div id="decision-map" class="decision-map" hidden role="region" aria-label="候选餐厅地图"></div>` : ""}
       ${
         Object.keys(result.excluded).length
-          ? `<details><summary>为什么有些门店没有入选？</summary><ul>${Object.entries(
+          ? `<details class="filter-explanation"><summary>查看其他门店的筛选原因</summary><ul>${Object.entries(
               result.excluded,
             )
               .map(([reason, count]) => `<li>${e(reason)}：${count} 家</li>`)
@@ -94,6 +113,8 @@ function renderDecision() {
       event.preventDefault();
       sendMessage(new FormData(event.currentTarget).get("message"));
     });
+  const log = document.getElementById("conversation-log");
+  log.scrollTop = log.scrollHeight;
 }
 
 async function sendMessage(message, location) {
@@ -142,9 +163,9 @@ async function sendMessage(message, location) {
 }
 
 async function renderDirectory(version) {
-  root.innerHTML = `<section class="page-intro"><h1>${state.page === "saved" ? "今晚清单" : "真实商家资料"}</h1><p>全部资料来自真实网上门店记录；网上收录不证明当前营业。菜单单价有来源才展示。</p>${catalogSummary()}</section>
+  root.innerHTML = `<section class="page-intro"><span class="eyebrow">${state.page === "saved" ? "YOUR LITTLE COLLECTION" : "EXPLORE WUHAN"}</span><h1>${state.page === "saved" ? "心仪的店，留给今晚。" : "沿着武汉，寻一口喜欢。"}</h1><p>${state.page === "saved" ? "把喜欢的店放在一起，下一顿就有了灵感。" : "看真实位置，翻翻菜单，再决定往哪走。"}</p></section>${catalogSummary()}
     ${state.page === "directory" ? `<form id="directory-form" class="directory-search"><label>店名、菜系或地址<input name="keyword" value="${e(state.keyword)}" maxlength="80"></label><label>行政区<input name="district" value="${e(state.district)}" placeholder="例如：江汉区"></label><button class="button-primary">搜索</button></form>` : ""}
-    ${state.page === "directory" ? '<section class="directory-map-section"><h2>真实商家地图</h2><p id="directory-map-status">正在加载全部来源坐标…</p><div id="directory-map" class="decision-map" role="region" aria-label="武汉真实商家地图"></div><p class="source-note">地图展示当前筛选下全部有坐标的门店，不受下方列表分页限制。OSM 社区点位和网页收录均不代表实时营业。</p></section>' : ""}
+    ${state.page === "directory" ? '<section class="directory-map-section"><div class="section-heading"><div><span class="eyebrow">WUHAN FOOD MAP</span><h2>武汉寻味地图</h2></div><button type="button" data-map-all>查看全部点位 ⤢</button></div><p id="directory-map-status" class="source-note">正在加载武汉底图和商家坐标…</p><div id="directory-map" class="decision-map" role="region" aria-label="武汉真实商家地图"></div><div class="map-caption"><span><i></i> 真实来源商家 · 点击查看资料</span><span>在线街道图不可用时显示武汉离线简图 · 可拖动缩放</span></div></section><div class="section-heading"><h2>发现武汉的味道</h2><span>每家店，资料有出处</span></div>' : ""}
     <div id="directory-results" class="decision-grid"><p>正在读取门店资料…</p></div><div id="directory-pagination" class="card-actions"></div>`;
   const form = document.getElementById("directory-form");
   form?.addEventListener("submit", (event) => {
@@ -182,9 +203,18 @@ async function renderDirectory(version) {
       const status = document.getElementById("directory-map-status");
       if (mapResult.status === "fulfilled") {
         const mapped = mapResult.value;
-        const drawn = window.NightFindWuhanMap?.draw(container, mapped.items);
+        const drawn = await window.NightFindWuhanMap?.draw(
+          container,
+          mapped.items,
+          { overview: true },
+        );
+        if (version !== pageVersion) return;
         container.dataset.pins = drawn?.pins || 0;
-        status.textContent = `筛选命中 ${mapped.total} 家，地图标注 ${drawn?.pins || 0} 家有来源坐标的门店。`;
+        status.textContent = `找到 ${mapped.total} 家商家，已载入 ${drawn?.pins || 0} 个来源坐标；地图展示全部筛选点位，不受列表分页限制。`;
+        if (state.focusMerchant != null) {
+          window.NightFindWuhanMap?.focus(state.focusMerchant);
+          state.focusMerchant = null;
+        }
       } else status.textContent = "地图资料暂不可用，仍可浏览下方列表。";
     }
     if (version !== pageVersion) return;
@@ -205,7 +235,7 @@ async function renderDirectory(version) {
   }
 }
 
-function navigate(page) {
+async function navigate(page) {
   state.page = page;
   pageVersion += 1;
   window.NightFindWuhanMap?.dispose();
@@ -215,8 +245,8 @@ function navigate(page) {
       button.classList.toggle("active", button.dataset.page === page),
     );
   if (page === "decision") renderDecision();
-  else renderDirectory(pageVersion);
   renderTray();
+  if (page !== "decision") await renderDirectory(pageVersion);
 }
 
 async function merchantById(id) {
@@ -344,10 +374,22 @@ document.addEventListener("click", async (event) => {
       state.directoryPage = Number(button.dataset.directoryPage);
       return navigate("directory");
     }
+    if (button.hasAttribute("data-map-all"))
+      return window.NightFindWuhanMap?.fitAll();
+    if (button.dataset.mapMerchant) {
+      const id = Number(button.dataset.mapMerchant);
+      dialog.close();
+      if (window.NightFindWuhanMap?.focus(id)) return;
+      state.keyword = "";
+      state.district = "";
+      state.directoryPage = 0;
+      state.focusMerchant = id;
+      return await navigate("directory");
+    }
     if (button.hasAttribute("data-show-map")) {
       const container = document.getElementById("decision-map");
       container.hidden = false;
-      const result = window.NightFindWuhanMap?.draw(
+      const result = await window.NightFindWuhanMap?.draw(
         container,
         state.result.items,
       );
@@ -356,6 +398,7 @@ document.addEventListener("click", async (event) => {
           "地图暂不可用。选定门店后仍可打开导航，或在高德核对具体分店。";
       else if (!result.pins)
         toast("这些候选暂无可用坐标；选定后可按名称和地址在地图中查找。");
+      container.scrollIntoView({ behavior: "smooth", block: "center" });
     }
     // Map popups use the real merchant action generated by wuhan_map.js.
     if (button.dataset.realMerchant) {
@@ -383,3 +426,19 @@ try {
   toast(error.message);
 }
 navigate("decision");
+
+// A blocked external image should leave the designed cover, not a broken-image icon.
+document.addEventListener(
+  "error",
+  (event) => {
+    if (!(event.target instanceof HTMLImageElement)) return;
+    event.target.hidden = true;
+    const caption = event.target.parentElement.querySelector(".image-caption");
+    if (caption) caption.hidden = true;
+    const credit = event.target
+      .closest(".decision-card")
+      ?.querySelector(".image-credit");
+    if (credit) credit.hidden = true;
+  },
+  true,
+);
