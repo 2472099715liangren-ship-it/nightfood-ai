@@ -73,12 +73,13 @@ export function merchantCards(items, saved, compared, showKeep = false) {
     <div class="decision-card-heading"><span class="eyebrow">${index + 1} · ${e(item.quality_label || "公开来源资料")}</span>
       <h2>${e(item.name)}</h2></div>
     <p>${e(item.district)} · ${e(item.address)}</p>
-    <div class="condition-tags"><span>${e(priceLabel(item))}</span><span>${e(item.cuisine)}</span>
+    <div class="condition-tags"><span>${e(priceLabel(item))}</span><span>${e(item.cuisine_display || item.cuisine)}</span>
       <span>${item.distance_km != null ? `约 ${e(item.distance_km)} km · 直线` : "距离待确认"}</span></div>
     ${item.estimated_total != null ? `<p>按来源参考价估算本次约 ¥${e(item.estimated_total)}，实际消费需向门店确认。</p>` : ""}
     ${item.reasons?.length ? `<h3>选择依据</h3><ul>${item.reasons.map((text) => `<li>${e(text)}</li>`).join("")}</ul>` : ""}
     ${item.questions?.length ? `<div class="confirmation-note"><strong>出发前需确认</strong><ul>${item.questions.map((text) => `<li>${e(text)}</li>`).join("")}</ul></div>` : ""}
-    <p class="source-note">资料核对 ${e(item.source_checked_at || "未注明")} · ${externalLink(item.source_url, item.source_name || "查看来源")}</p>
+    <p class="source-note">${e(item.evidence_label || "日期待确认")} · ${externalLink(item.source_url, item.source_name || "查看来源")}</p>
+    <p class="source-note">${(item.priced_menu || []).length ? item.priced_menu.map((dish) => `${e(dish.dish_name)} ¥${e(dish.price)} ${e(dish.price_unit)}`).join(" · ") : "暂无可核验单品价格"}</p>
     <div class="card-actions">
       <button type="button" data-detail="${item.id}">菜单与资料</button>
       <button type="button" data-save="${item.id}" aria-pressed="${saved.has(item.id)}">${saved.has(item.id) ? "♥ 已收藏" : "♡ 收藏"}</button>
@@ -117,7 +118,9 @@ export function detailsView(item) {
     <p>营业资料：${e(item.opening_hours || "尚未收录，请联系门店确认")}</p>
     <p>${e(item.location_note || "")}</p><div class="evidence-gallery">${images}</div>
     <h3>菜单与价格来源</h3><ul>${menu || "<li>暂无带近期来源的菜单资料，请向门店确认。</li>"}</ul>
-    <p>${externalLink(item.source_url, `商家资料来源 · ${item.source_checked_at}`)}</p>
+    <p>${e(item.evidence_label)} · ${externalLink(item.source_url, "原始商家来源")}</p>
+    ${item.evidence_url ? `<p>${externalLink(item.evidence_url, "采集或归档证据")}</p>` : ""}
+    <p>坐标：${item.latitude != null && item.longitude != null ? `${e(item.latitude)}, ${e(item.longitude)}（纬度、经度，WGS84）` : "来源未提供可靠坐标"}</p>
     <button class="button-primary" data-choose="${item.id}">就选这家</button>`;
 }
 
@@ -137,14 +140,14 @@ export function comparisonView(items) {
   const rows = [
     ["参考人均", (item) => priceLabel(item)],
     ["地址", (item) => item.address],
-    ["菜系", (item) => item.cuisine],
+    ["菜系", (item) => item.cuisine_display || item.cuisine],
     [
       "直线距离",
       (item) =>
         item.distance_km != null ? `${item.distance_km} km` : "待确认",
     ],
     ["营业资料", (item) => item.opening_hours || "待确认"],
-    ["资料核对日期", (item) => item.source_checked_at],
+    ["来源证据日期", (item) => item.evidence_label],
     ["资料状态", (item) => item.quality_label],
     [
       "仍需确认",

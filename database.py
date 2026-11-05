@@ -2,9 +2,11 @@
 
 Keep SQL and persistence details in this module. Business rules live in services.py.
 """
+
 import json
 import os
 import sqlite3
+import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -38,8 +40,10 @@ def _add_missing_columns(connection):
             )
 
 
-def initialize_database(*, import_snapshot=True, import_bundled_catalog=True):
-    """Create tables, apply safe additive migrations, and seed demo records once."""
+def initialize_database(
+    *, import_snapshot=True, import_bundled_catalog=True, include_demo=False
+):
+    """Initialize the real catalog. Demo fixtures are opt-in for isolated tests only."""
     with connect() as connection:
         connection.executescript(
             """
@@ -152,22 +156,69 @@ def initialize_database(*, import_snapshot=True, import_bundled_catalog=True):
             """
         )
         _add_missing_columns(connection)
-        _seed_demo_data(connection)
-        _backfill_merchant_descriptions(connection)
+        if include_demo:
+            _seed_demo_data(connection)
+            _backfill_merchant_descriptions(connection)
+        else:
+            _remove_known_demo_records(connection)
         # Keep verified real merchants in separate tables from prototype data.
         from real_catalog import initialize_real_catalog
+
         initialize_real_catalog(connection)
         from decision_catalog import initialize_decision_tables
+
         initialize_decision_tables(connection)
         # Seed the checked-in Wuhan merchant CSV files without network access.
         if import_bundled_catalog:
             from real_catalog import seed_bundled_catalog
+
             seed_bundled_catalog(connection)
         # Load approved OSM snapshot only when its checksum changes.
         # No network access occurs during normal app startup.
         if import_snapshot:
             from osm_sync import hydrate_osm_snapshot
+
             hydrate_osm_snapshot(connection)
+
+
+def _remove_known_demo_records(connection):
+    """Archive once before removing only the 24 explicitly known sample shops."""
+    prefixes = (
+        "江城炭火烧烤",
+        "巷里小龙虾",
+        "一碗热干面",
+        "深夜食堂·小馆",
+        "沿江鲜鱼馆",
+        "街角砂锅粥",
+    )
+    areas = ("江汉路", "楚河汉街", "光谷步行街", "粮道街")
+    names = [name + " · " + area for name in prefixes for area in areas]
+    placeholders = ",".join("?" for _ in names)
+    ids = [
+        row[0]
+        for row in connection.execute(
+            "SELECT id FROM restaurants WHERE source_note='研究原型模拟数据' AND name IN ("
+            + placeholders
+            + ")",
+            names,
+        )
+    ]
+    if not ids:
+        return
+    # Never discard visitors' previous sample-linked records without a recoverable copy.
+    connection.commit()
+    backup_dir = DB_PATH.parent / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(
+        backup_dir / ("before-real-only-" + uuid.uuid4().hex + ".db")
+    ) as backup:
+        connection.backup(backup)
+    selected = ",".join("?" for _ in ids)
+    for table in ("recommendation_items", "hours", "dishes", "favorites", "feedback"):
+        connection.execute(
+            "DELETE FROM " + table + " WHERE restaurant_id IN (" + selected + ")", ids
+        )
+    connection.execute("DELETE FROM restaurants WHERE id IN (" + selected + ")", ids)
 
 
 def _seed_demo_data(connection):
@@ -188,18 +239,54 @@ def _seed_demo_data(connection):
         return
 
     samples = [
-        ("江城炭火烧烤", "烧烤", 65, "朋友聚会,烟火气", "#D9B48F",
-         "适合慢慢聊天的炭火烧烤风味小馆。"),
-        ("巷里小龙虾", "小龙虾", 98, "朋友聚会,武汉特色", "#E8B6A5",
-         "以小龙虾和分享式菜品为主题的夜宵小馆。"),
-        ("一碗热干面", "湖北菜", 22, "独自用餐,武汉特色", "#E8D8A7",
-         "适合简单吃一餐的武汉风味面食档口。"),
-        ("深夜食堂·小馆", "家常菜", 48, "独自用餐,安静", "#C9D9B9",
-         "以家常菜为主，适合不想吃得太复杂的晚上。"),
-        ("沿江鲜鱼馆", "湖北菜", 86, "朋友聚会,武汉特色", "#B9D3D0",
-         "以鱼类和湖北家常风味为主题的聚餐小馆。"),
-        ("街角砂锅粥", "粥粉面", 35, "清淡,独自用餐", "#E4D7BC",
-         "口味相对清爽，适合想吃热乎简餐的时候。"),
+        (
+            "江城炭火烧烤",
+            "烧烤",
+            65,
+            "朋友聚会,烟火气",
+            "#D9B48F",
+            "适合慢慢聊天的炭火烧烤风味小馆。",
+        ),
+        (
+            "巷里小龙虾",
+            "小龙虾",
+            98,
+            "朋友聚会,武汉特色",
+            "#E8B6A5",
+            "以小龙虾和分享式菜品为主题的夜宵小馆。",
+        ),
+        (
+            "一碗热干面",
+            "湖北菜",
+            22,
+            "独自用餐,武汉特色",
+            "#E8D8A7",
+            "适合简单吃一餐的武汉风味面食档口。",
+        ),
+        (
+            "深夜食堂·小馆",
+            "家常菜",
+            48,
+            "独自用餐,安静",
+            "#C9D9B9",
+            "以家常菜为主，适合不想吃得太复杂的晚上。",
+        ),
+        (
+            "沿江鲜鱼馆",
+            "湖北菜",
+            86,
+            "朋友聚会,武汉特色",
+            "#B9D3D0",
+            "以鱼类和湖北家常风味为主题的聚餐小馆。",
+        ),
+        (
+            "街角砂锅粥",
+            "粥粉面",
+            35,
+            "清淡,独自用餐",
+            "#E4D7BC",
+            "口味相对清爽，适合想吃热乎简餐的时候。",
+        ),
     ]
     districts = connection.execute(
         "SELECT id, name, lat, lng FROM districts ORDER BY id"
@@ -276,9 +363,7 @@ def _backfill_merchant_descriptions(connection):
 
 
 def ensure_session(connection, session_id):
-    connection.execute(
-        "INSERT OR IGNORE INTO sessions(id) VALUES (?)", (session_id,)
-    )
+    connection.execute("INSERT OR IGNORE INTO sessions(id) VALUES (?)", (session_id,))
 
 
 def _merchant_dict(row):
@@ -299,9 +384,7 @@ def list_merchants(
 
     if keyword:
         pattern = "%" + keyword.strip()[:80] + "%"
-        conditions.append(
-            "(r.name LIKE ? OR r.cuisine LIKE ? OR r.description LIKE ?)"
-        )
+        conditions.append("(r.name LIKE ? OR r.cuisine LIKE ? OR r.description LIKE ?)")
         parameters.extend([pattern, pattern, pattern])
 
     if district:
@@ -317,7 +400,8 @@ def list_merchants(
         parameters.append(max_price)
 
     where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
-    query = """
+    query = (
+        """
         SELECT
             r.id, r.name, r.cuisine, r.price, r.rating, r.wait,
             r.tags, r.color, r.description, r.address_label, r.source_note, r.lat, r.lng,
@@ -332,7 +416,10 @@ def list_merchants(
                    ROUND(AVG(rating), 1) AS average_rating
             FROM feedback GROUP BY restaurant_id
         ) AS review_stats ON review_stats.restaurant_id = r.id
-    """ + where_clause + " ORDER BY r.name LIMIT ?"
+    """
+        + where_clause
+        + " ORDER BY r.name LIMIT ?"
+    )
     parameters.append(max(1, min(int(limit), 200)))
     rows = connection.execute(query, parameters).fetchall()
     return [_merchant_dict(row) for row in rows]
@@ -467,9 +554,7 @@ def create_suggestion(connection, session_id, category, message):
 
 
 def suggestion_summary(connection):
-    total = connection.execute(
-        "SELECT COUNT(*) FROM suggestions"
-    ).fetchone()[0]
+    total = connection.execute("SELECT COUNT(*) FROM suggestions").fetchone()[0]
     categories = [
         dict(row)
         for row in connection.execute(

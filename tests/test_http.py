@@ -19,7 +19,9 @@ class HttpApiTests(unittest.TestCase):
         self.original_api_key = os.environ.get("OPENAI_API_KEY")
         database.DB_PATH = Path(self.temp_dir.name) / "http-test.db"
         os.environ["OPENAI_API_KEY"] = ""
-        database.initialize_database(import_snapshot=False, import_bundled_catalog=False)
+        database.initialize_database(
+            import_snapshot=False, import_bundled_catalog=False, include_demo=True
+        )
 
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), NightFindHandler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -63,7 +65,9 @@ class HttpApiTests(unittest.TestCase):
 
         directory = self.call_api("/api/merchants?district=%E6%B1%9F%E6%B1%89%E8%B7%AF")
         self.assertTrue(directory["items"])
-        self.assertTrue(all(item["district"] == "江汉路" for item in directory["items"]))
+        self.assertTrue(
+            all(item["district"] == "江汉路" for item in directory["items"])
+        )
 
         merchant = self.call_api("/api/merchants/1")
         self.assertEqual(len(merchant["dishes"]), 3)
@@ -97,33 +101,42 @@ class HttpApiTests(unittest.TestCase):
         updated_merchant = self.call_api("/api/merchants/1")
         self.assertEqual(updated_merchant["reviews"][0]["rating"], 5)
 
-
     def test_chat_followups_have_actionable_prompts(self):
-        first = self.call_api("/api/chat", {
-            "message": "今晚想吃烧烤",
-            "context": {},
-            "history": [],
-        })
+        first = self.call_api(
+            "/api/chat",
+            {
+                "message": "今晚想吃烧烤",
+                "context": {},
+                "history": [],
+            },
+        )
         self.assertTrue(first["follow_up"]["actions"])
-        self.assertTrue(any(
-            item["message"] == "江汉路"
-            for item in first["follow_up"]["actions"]
-        ))
-        next_turn = self.call_api("/api/chat", {
-            "message": "江汉路",
-            "context": first["constraints"],
-            "history": [],
-        })
-        self.assertEqual(next_turn["constraints"]["district"], "江汉路")
-        self.assertIn("district", next_turn["constraints"]["known"])
+        self.assertIn("江汉路附近", first["follow_up"]["actions"])
+        next_turn = self.call_api(
+            "/api/chat",
+            {
+                "message": "江汉路",
+                "context": first["constraints"],
+                "history": [],
+            },
+        )
+        self.assertEqual(next_turn["constraints"]["location"]["name"], "江汉路")
+        self.assertEqual(next_turn["constraints"]["provenance"]["location"], "user")
 
     def test_compare_endpoint_rejects_bad_ids(self):
-        result = self.call_api("/api/compare?ids=1%2C2&scene=%E6%9C%8B%E5%8F%8B%E8%81%9A%E4%BC%9A")
+        result = self.call_api(
+            "/api/compare?ids=1%2C2&scene=%E6%9C%8B%E5%8F%8B%E8%81%9A%E4%BC%9A"
+        )
         self.assertEqual(len(result["items"]), 2)
         self.assertIn(result["summary"]["recommended_id"], (1, 2))
-        for path in ("/api/compare?ids=1%2C1", "/api/compare?ids=1",
-                     "/api/compare?ids=1%2C2%2C3%2C4"):
-            with self.subTest(path=path), self.assertRaises(urllib.error.HTTPError) as caught:
+        for path in (
+            "/api/compare?ids=1%2C1",
+            "/api/compare?ids=1",
+            "/api/compare?ids=1%2C2%2C3%2C4",
+        ):
+            with self.subTest(path=path), self.assertRaises(
+                urllib.error.HTTPError
+            ) as caught:
                 self.call_api(path)
             self.assertEqual(caught.exception.code, 400)
 

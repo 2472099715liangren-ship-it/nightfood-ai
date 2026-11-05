@@ -223,3 +223,36 @@ td {
     justify-content: center;
   }
 }
+.catalog-summary {
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--green-pale);
+  font-size: 14px;
+}
+.directory-map-section {
+  margin: 24px 0;
+}
+.directory-map-section .decision-map {
+  height: 460px;
+}
+.reply-text {
+  white-space: pre-line;
+}
+@media (max-width: 600px) {
+  .directory-map-section .decision-map {
+    height: 340px;
+  }
+}
+.decision-map[data-tiles="error"]::after {
+  content: "部分底图暂不可用，仍可查看真实来源坐标";
+  position: absolute;
+  left: 8px;
+  bottom: 30px;
+  z-index: 800;
+  background: #fff9e9;
+  padding: 7px 10px;
+  border-radius: 8px;
+  color: #71613f;
+  font-size: 12px;
+  pointer-events: none;
+}

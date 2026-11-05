@@ -16,11 +16,11 @@ def initialize_decision_tables(connection):
     )
 
 
-def list_public_merchants(connection):
+def list_public_merchants(connection, **filters):
     """Read every public page, so ranking is not limited to the first 100 rows."""
     offset = 0
     while True:
-        page = public_real_merchants(connection, limit=100, offset=offset)
+        page = public_real_merchants(connection, limit=100, offset=offset, **filters)
         yield from page["items"]
         offset += len(page["items"])
         if not page["items"] or offset >= page["total"]:
@@ -65,3 +65,60 @@ def saved_real_merchants(connection, session_id):
         if item is not None:
             result.append(item)
     return result
+
+
+def real_map_catalog(connection, keyword="", district=""):
+    """All matching source coordinates, independent of the directory list page."""
+    from catalog_policy import catalog_cutoff
+
+    menus = {}
+    for row in connection.execute(
+        "SELECT merchant_id,dish_name,price,price_unit,price_source_url,price_checked_at "
+        "FROM real_merchant_menu_items WHERE price IS NOT NULL AND price_checked_at >= ?",
+        (catalog_cutoff(),),
+    ):
+        menus.setdefault(row["merchant_id"], []).append(dict(row))
+    fields = (
+        "id",
+        "name",
+        "district",
+        "address",
+        "cuisine",
+        "latitude",
+        "longitude",
+        "source_name",
+        "source_url",
+        "source_checked_at",
+        "source_collected_at",
+        "source_archived_at",
+        "source_updated_at",
+        "evidence_url",
+        "data_quality",
+        "price_per_person",
+        "price_range_min",
+        "price_range_max",
+        "price_range_basis",
+    )
+    result = []
+    total = 0
+    for item in list_public_merchants(connection, keyword=keyword, district=district):
+        total += 1
+        lat, lng = item["latitude"], item["longitude"]
+        if (
+            lat is None
+            or lng is None
+            or not (29.8 <= lat <= 31.5 and 113.5 <= lng <= 115.2)
+        ):
+            continue
+        result.append(
+            {
+                **{field: item[field] for field in fields},
+                "priced_menu": menus.get(item["id"], []),
+            }
+        )
+    return dict(
+        items=result,
+        total=total,
+        mapped_total=len(result),
+        notice="展示当前筛选下全部有来源坐标的门店，不受列表分页限制；点位不代表实时营业。",
+    )

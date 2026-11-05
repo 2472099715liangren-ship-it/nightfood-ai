@@ -1,57 +1,35 @@
-name: Collect Wuhan OSM restaurants once
+name: Collect Wuhan public restaurant snapshot
 
 on:
-  push:
-    branches:
-      - feature/osm-wuhan-public-data
-    paths:
-      - .github/workflows/osm-collect.yml
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 11
+    timeout-minutes: 10
     steps:
-      - name: Check out feature branch
-        uses: actions/checkout@v4
-        with:
-          ref: feature/osm-wuhan-public-data
-          persist-credentials: true
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install offline PBF reader (collection job only)
-        run: python3 -m pip install --disable-pip-version-check osmium shapely
-      - name: Download ODbL Hubei extract and clip to Wuhan city
+      - name: Collect at least 100 source locations
+        run: python3 osm_sync.py fetch --minimum 100
+      - name: Validate source coordinates and metadata
         run: |
-          python3 geofabrik_sync.py --output data_sources/osm_wuhan_snapshot.json
-      - name: Validate and load snapshot without deleting old demo data
-        run: |
-          python3 -m unittest discover -s tests -v
           python3 - <<'PY'
-          import database
-          from real_catalog import catalog_coverage
-          database.initialize_database()
-          with database.connect() as conn:
-              status=catalog_coverage(conn)
-              print("Community mapped restaurants:", status["community_total"])
-              assert status["community_total"] > 0
+          from osm_sync import LIVE_SNAPSHOT, read_snapshot
+          rows, digest = read_snapshot(LIVE_SNAPSHOT)
+          assert len(rows) >= 100
+          assert len({row['external_id'] for row in rows}) == len(rows)
+          assert all(row['latitude'] is not None and row['longitude'] is not None for row in rows)
+          assert all(row['source_collected_at'] for row in rows)
+          print('Validated', len(rows), 'online source records; operating status remains unverified.')
           PY
-      - name: Commit checked snapshot to this feature branch
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin feature/osm-wuhan-public-data
-          git add data_sources/osm_wuhan_snapshot.json
-          if git diff --cached --quiet; then
-            echo "No new snapshot changes"
-          else
-            git commit -m "data: import Wuhan OSM community restaurants (ODbL)"
-            git pull --rebase origin feature/osm-wuhan-public-data
-            git push origin HEAD:feature/osm-wuhan-public-data
-          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wuhan-public-restaurant-snapshot
+          path: data_sources/wuhan_live_catalog.json
+          if-no-files-found: error

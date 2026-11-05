@@ -9,12 +9,18 @@ window.NightFindWuhanMap = (function () {
   let currentContainer = null;
 
   function escapeHtml(value) {
-    return String(value == null ? "" : value).replace(/[&<>"']/g, function (char) {
-      return {
-        "&": "&amp;", "<": "&lt;", ">": "&gt;",
-        '"': "&quot;", "'": "&#39;"
-      }[char];
-    });
+    return String(value == null ? "" : value).replace(
+      /[&<>"']/g,
+      function (char) {
+        return {
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        }[char];
+      },
+    );
   }
 
   function dispose() {
@@ -33,12 +39,22 @@ window.NightFindWuhanMap = (function () {
     }
     if (currentContainer !== container) {
       dispose();
-      map = L.map(container, { preferCanvas: true, zoomControl: true })
-        .setView([30.59, 114.30], 10);
-      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom: 18,
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>'
-      }).addTo(map);
+      map = L.map(container, { preferCanvas: true, zoomControl: true }).setView(
+        [30.59, 114.3],
+        10,
+      );
+      container.dataset.tiles = "loading";
+      const tiles = L.tileLayer(
+        "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        {
+          maxZoom: 18,
+          attribution:
+            '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>',
+        },
+      ).addTo(map);
+      tiles.on("tileerror", function () {
+        container.dataset.tiles = "error";
+      });
       currentContainer = container;
       markerLayer = L.layerGroup().addTo(map);
     }
@@ -47,8 +63,13 @@ window.NightFindWuhanMap = (function () {
     restaurants.forEach(function (restaurant) {
       const lat = Number(restaurant.latitude);
       const lng = Number(restaurant.longitude);
-      if (!Number.isFinite(lat) || !Number.isFinite(lng) ||
-          restaurant.latitude == null || restaurant.longitude == null) return;
+      if (
+        !Number.isFinite(lat) ||
+        !Number.isFinite(lng) ||
+        restaurant.latitude == null ||
+        restaurant.longitude == null
+      )
+        return;
       if (lat < 29.8 || lat > 31.5 || lng < 113.5 || lng > 115.2) return;
 
       const verified = restaurant.data_quality === "verified";
@@ -58,31 +79,75 @@ window.NightFindWuhanMap = (function () {
         color: verified ? "#3f6a49" : community ? "#718a9c" : "#9b8058",
         fillColor: verified ? "#80a97e" : community ? "#a9c1d0" : "#d8c39b",
         fillOpacity: 0.92,
-        weight: 2
+        weight: 2,
       }).addTo(markerLayer);
-      const price = restaurant.price_per_person != null
-        ? "人均约 ¥" + restaurant.price_per_person
-        : restaurant.price_range_min != null && restaurant.price_range_max != null
-          ? "参考价 ¥" + restaurant.price_range_min + "–" + restaurant.price_range_max
-          : "价格待核实";
-      const quality = verified ? "人工核验通过" :
-        community ? "OSM 社区收录 · 营业状态未核实" : "网页收录 · 营业状态未人工核实";
+      const price =
+        restaurant.price_per_person != null
+          ? "人均约 ¥" + restaurant.price_per_person
+          : restaurant.price_range_min != null &&
+              restaurant.price_range_max != null
+            ? "参考价 ¥" +
+              restaurant.price_range_min +
+              "–" +
+              restaurant.price_range_max
+            : "价格待核实";
+      const dateNote = restaurant.source_checked_at
+        ? "来源核查 " + restaurant.source_checked_at
+        : restaurant.source_collected_at
+          ? "在线采集 " + restaurant.source_collected_at
+          : "原资料归档 " + (restaurant.source_archived_at || "日期未知");
+      const menu =
+        (restaurant.priced_menu || [])
+          .slice(0, 3)
+          .map(function (dish) {
+            return (
+              escapeHtml(dish.dish_name) +
+              " ¥" +
+              escapeHtml(dish.price) +
+              " " +
+              escapeHtml(dish.price_unit)
+            );
+          })
+          .join("<br>") || "暂无可核验单品价格";
+      const quality = verified
+        ? "人工核验通过"
+        : community
+          ? "OSM 社区收录 · 营业状态未核实"
+          : "网页收录 · 营业状态未人工核实";
       marker.bindPopup(
-        '<div class="real-map-popup"><strong>' + escapeHtml(restaurant.name) +
-        '</strong><p>' + escapeHtml(restaurant.district) + " · " +
-        escapeHtml(restaurant.address) + '</p><span class="real-map-quality ' +
-        (verified ? "verified" : community ? "community" : "web-listing") + '">' + escapeHtml(quality) +
-        '</span><p>' + escapeHtml(price) + " · 来源核查 " +
-        escapeHtml(restaurant.source_checked_at || "未记录") +
-        '</p><button type="button" data-real-merchant="' +
-        restaurant.id + '">查看门店资料 →</button></div>'
+        '<div class="real-map-popup"><strong>' +
+          escapeHtml(restaurant.name) +
+          "</strong><p>" +
+          escapeHtml(restaurant.district) +
+          " · " +
+          escapeHtml(restaurant.address) +
+          '</p><span class="real-map-quality ' +
+          (verified ? "verified" : community ? "community" : "web-listing") +
+          '">' +
+          escapeHtml(quality) +
+          "</span><p>" +
+          escapeHtml(price) +
+          " · " +
+          escapeHtml(dateNote) +
+          "</p><p>" +
+          escapeHtml(lat.toFixed(6)) +
+          ", " +
+          escapeHtml(lng.toFixed(6)) +
+          " · WGS84</p><p>" +
+          menu +
+          '</p><button type="button" data-real-merchant="' +
+          restaurant.id +
+          '">查看门店资料 →</button></div>',
       );
       bounds.push([lat, lng]);
     });
     if (bounds.length) {
-      map.fitBounds(L.latLngBounds(bounds).pad(0.17), { maxZoom: 14 });
+      map.fitBounds(L.latLngBounds(bounds).pad(0.17), {
+        maxZoom: 14,
+        animate: false,
+      });
     } else {
-      map.setView([30.59, 114.30], 10);
+      map.setView([30.59, 114.3], 10);
     }
     window.requestAnimationFrame(function () {
       if (map) map.invalidateSize();

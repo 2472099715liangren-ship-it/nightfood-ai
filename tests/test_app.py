@@ -13,7 +13,7 @@ class NightFindTests(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.original_path = database.DB_PATH
         database.DB_PATH = Path(self.temp_dir.name) / "nightfind-test.db"
-        database.initialize_database(import_snapshot=False, import_bundled_catalog=False)
+        database.initialize_database(import_snapshot=False, import_bundled_catalog=False, include_demo=True)
         with database.connect() as connection:
             database.ensure_session(connection, "test-session")
 
@@ -22,7 +22,7 @@ class NightFindTests(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def test_database_initializes_without_duplicate_seed_data(self):
-        database.initialize_database()
+        database.initialize_database(include_demo=True)
         with database.connect() as connection:
             merchant_count = connection.execute(
                 "SELECT COUNT(*) FROM restaurants"

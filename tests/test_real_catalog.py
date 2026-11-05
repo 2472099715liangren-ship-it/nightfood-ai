@@ -33,16 +33,16 @@ class RealCatalogTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.old_path = database.DB_PATH
         database.DB_PATH = Path(self.tmp.name) / "catalog.db"
-        database.initialize_database(import_snapshot=False, import_bundled_catalog=False)
+        database.initialize_database(import_snapshot=False, import_bundled_catalog=False, include_demo=True)
 
     def tearDown(self):
         database.DB_PATH = self.old_path
         self.tmp.cleanup()
 
     def test_expired_and_undated_records_are_hidden(self):
-        from real_catalog import _fresh_cutoff
+        from catalog_policy import catalog_cutoff
         checked = record("old-check")
-        cutoff = date.fromisoformat(_fresh_cutoff())
+        cutoff = date.fromisoformat(catalog_cutoff())
         checked["source_checked_at"] = (cutoff - timedelta(days=1)).isoformat()
         with database.connect() as connection:
             with self.assertRaises(ValueError):

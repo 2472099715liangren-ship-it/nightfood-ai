@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "kind": "repository_archive",
+  "archived_at": "2026-11-02",
+  "sha256": "ca57135dfe4eb923c56c0d61daa3bcab5f83dbb6aa94bc6feae85c0798a6313c",
+  "record_count": 834,
+  "evidence_url": "https://github.com/2472099715liangren-ship-it/nightfood-ai/blob/5389d9bba6a63bd953e90770f1fb0c6d3e7622e2/data_sources/osm_wuhan_snapshot.json",
+  "source_name": "OpenStreetMap",
+  "license": "ODbL-1.0",
+  "notice": "日期表示该公开地图快照已归档的时间，不是逐店调查日期，也不证明门店当前营业。此归档不代表本次已重新联网采集。"
+}

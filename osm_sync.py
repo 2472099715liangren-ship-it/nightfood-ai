@@ -6,7 +6,9 @@ Usage (network required):
 The generated snapshot contains OSM community entries, not independently
 verified businesses. It must be distributed with OpenStreetMap attribution.
 """
+
 import argparse
+import os
 import hashlib
 import json
 import datetime as dt
@@ -15,10 +17,16 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from real_catalog import UNKNOWN_DISTRICT, WUHAN_DISTRICTS, import_real_merchants
+from real_catalog import (
+    UNKNOWN_DISTRICT,
+    WUHAN_DISTRICTS,
+    import_real_merchants,
+    validate_real_merchants,
+)
 
 ROOT = Path(__file__).resolve().parent
 SNAPSHOT = ROOT / "data_sources" / "osm_wuhan_snapshot.json"
+LIVE_SNAPSHOT = ROOT / "data_sources" / "wuhan_live_catalog.json"
 ENDPOINTS = (
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
@@ -38,9 +46,7 @@ def overpass_query(bbox):
     return (
         "[out:json][timeout:35];"
         "(nwr[amenity~'^(restaurant|fast_food|cafe|food_court)$']"
-        "[name]({},{},{},{}););out center tags;".format(
-            south, west, north, east
-        )
+        "[name]({},{},{},{}););out meta center;".format(south, west, north, east)
     )
 
 
@@ -59,7 +65,11 @@ def convert_osm_element(element):
     lat, lon = location.get("lat"), location.get("lon")
     if kind not in ("node", "way", "relation") or not isinstance(identifier, int):
         return None
-    if not name or not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+    if (
+        not name
+        or not isinstance(lat, (int, float))
+        or not isinstance(lon, (int, float))
+    ):
         return None
     # Safety bound in addition to the actual administrative-area query.
     if not (29.9 <= lat <= 31.5 and 113.5 <= lon <= 115.2):
@@ -70,7 +80,11 @@ def convert_osm_element(element):
 
     street = (tags.get("addr:street") or "").strip()
     number = (tags.get("addr:housenumber") or "").strip()
-    address = "武汉市" + (district if district != UNKNOWN_DISTRICT else "") + street + number if street else ""
+    address = (
+        "武汉市" + (district if district != UNKNOWN_DISTRICT else "") + street + number
+        if street
+        else ""
+    )
     if not address:
         address = "详细地址待核实，请通过来源地图查看位置"
 
@@ -107,6 +121,7 @@ def convert_osm_element(element):
         "source_name": "OpenStreetMap",
         "source_url": "https://www.openstreetmap.org/{}/{}".format(kind, identifier),
         "source_checked_at": checked,
+        "source_updated_at": str(element.get("timestamp", ""))[:10],
         "verified_at": "",  # OSM community data is NOT business verification.
         "verification_method": "",
         "status": "pending",
@@ -134,13 +149,13 @@ def fetch_wuhan_osm():
     all_rows = {}
     errors = []
     for index, bbox in enumerate(SAMPLE_BBOXES, 1):
-        form = urllib.parse.urlencode(
-            {"data": overpass_query(bbox)}
-        ).encode("utf-8")
+        form = urllib.parse.urlencode({"data": overpass_query(bbox)}).encode("utf-8")
         completed = False
         for endpoint in ENDPOINTS:
             request = urllib.request.Request(
-                endpoint, data=form, method="POST",
+                endpoint,
+                data=form,
+                method="POST",
                 headers={
                     "Content-Type": "application/x-www-form-urlencoded",
                     "User-Agent": "NightFindWuhanCatalog/1.1 (OSM ODbL snapshot)",
@@ -152,84 +167,210 @@ def fetch_wuhan_osm():
                     raw = response.read(4_000_001)
                     if len(raw) > 4_000_000:
                         raise ValueError("单个分区响应超过 4 MB")
-                    records = parse_overpass_payload(
-                        json.loads(raw.decode("utf-8"))
-                    )
+                    records = parse_overpass_payload(json.loads(raw.decode("utf-8")))
                     for record in records:
+                        record["evidence_url"] = endpoint
+                        record["source_collected_at"] = dt.date.today().isoformat()
                         all_rows[record["external_id"]] = record
                     print(
                         "区块 {}/{}：获取 {} 条开放地图餐饮场所".format(
                             index, len(SAMPLE_BBOXES), len(records)
-                        ), flush=True,
+                        ),
+                        flush=True,
                     )
                     completed = True
                     break
-            except (urllib.error.URLError, TimeoutError, ValueError,
-                    json.JSONDecodeError, OSError) as exc:
+            except (
+                urllib.error.URLError,
+                TimeoutError,
+                ValueError,
+                json.JSONDecodeError,
+                OSError,
+            ) as exc:
                 errors.append("{}: {}".format(endpoint, exc))
         if not completed:
-            print("区块 {}/{} 获取失败（未包含在快照中）".format(
-                index, len(SAMPLE_BBOXES)
-            ), flush=True)
+            print(
+                "区块 {}/{} 获取失败（未包含在快照中）".format(
+                    index, len(SAMPLE_BBOXES)
+                ),
+                flush=True,
+            )
         time.sleep(1)  # Gentle pacing for community infrastructure.
 
     if not all_rows:
         raise RuntimeError(
             "未能从公开接口获取餐饮记录；不会生成虚假快照。"
-            + " 最近错误：" + (errors[-1] if errors else "无记录")
+            + " 最近错误："
+            + (errors[-1] if errors else "无记录")
         )
     return [all_rows[key] for key in sorted(all_rows)][:MAX_RECORDS]
 
 
-def hydrate_osm_snapshot(connection, path=SNAPSHOT):
-    """Load a committed snapshot into SQLite once per file revision.
-
-    This is safe on every startup and does not replace independently verified
-    records. Existing demonstration restaurants remain in their original table.
-    """
+def read_snapshot(path):
+    """Load source rows and verified batch provenance without inventing survey dates."""
     path = Path(path)
+    payload = path.read_bytes()
+    decoded = json.loads(payload.decode("utf-8"))
+    metadata_bytes = b""
+    if isinstance(decoded, dict):
+        metadata = decoded.get("metadata", {})
+        rows = decoded.get("records")
+        if not isinstance(rows, list):
+            raise ValueError("快照 records 必须为数组")
+        evidence = json.dumps(rows, ensure_ascii=False, sort_keys=True).encode()
+    else:
+        rows = decoded
+        meta_path = path.with_suffix(".meta.json")
+        metadata_bytes = meta_path.read_bytes() if meta_path.is_file() else b""
+        metadata = json.loads(metadata_bytes) if metadata_bytes else {}
+        evidence = payload
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("OSM 快照必须包含实际来源记录")
+    if metadata:
+        if metadata.get("sha256") != hashlib.sha256(evidence).hexdigest():
+            raise ValueError("OSM 快照与来源清单的 SHA-256 不一致")
+        if metadata.get("record_count") != len(rows):
+            raise ValueError("OSM 快照条数与清单不一致")
+        kind = metadata.get("kind")
+        if kind not in ("repository_archive", "live_osm"):
+            raise ValueError("不支持的 OSM 来源证据类型")
+        if not str(metadata.get("evidence_url", "")).startswith("https://"):
+            raise ValueError("OSM 快照缺少 HTTPS 来源证据")
+        field = (
+            "source_archived_at"
+            if kind == "repository_archive"
+            else "source_collected_at"
+        )
+        date = metadata.get(
+            "archived_at" if kind == "repository_archive" else "collected_at", ""
+        )
+        from catalog_policy import clean_date
+
+        if not clean_date(date, field):
+            raise ValueError("快照需要记录真实的采集或归档日期")
+        rows = [
+            dict(
+                row,
+                **{field: date},
+                evidence_url=(row.get("evidence_url") if kind == "live_osm" else None)
+                or metadata["evidence_url"],
+            )
+            for row in rows
+        ]
+    # Preserve the meaning of an absent survey date without substituting a batch date.
+    rows = [
+        dict(row, source_checked_at=row.get("source_checked_at", "")) for row in rows
+    ]
+    return rows, hashlib.sha256(payload + metadata_bytes).hexdigest()
+
+
+def hydrate_osm_snapshot(connection, path=None):
+    """Use a new live collection when present; otherwise retain the attributed archive."""
+    path = (
+        Path(path)
+        if path is not None
+        else (LIVE_SNAPSHOT if LIVE_SNAPSHOT.is_file() else SNAPSHOT)
+    )
     if not path.is_file():
         return 0
-    payload = path.read_bytes()
-    digest = hashlib.sha256(payload).hexdigest()
-    connection.execute("""
+    rows, digest = read_snapshot(path)
+    connection.execute(
+        """
         CREATE TABLE IF NOT EXISTS catalog_import_state (
             source TEXT PRIMARY KEY,
             checksum TEXT NOT NULL,
             imported_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
-    """)
+    """
+    )
     current = connection.execute(
         "SELECT checksum FROM catalog_import_state WHERE source = 'osm_wuhan'"
     ).fetchone()
     if current is not None and current["checksum"] == digest:
         return 0
-    rows = json.loads(payload.decode("utf-8"))
-    if not isinstance(rows, list) or not rows:
-        raise ValueError("OSM 快照必须是非空 JSON 数组")
     result = import_real_merchants(connection, rows)
     connection.execute(
         "INSERT INTO catalog_import_state(source,checksum) VALUES ('osm_wuhan',?) "
-        "ON CONFLICT(source) DO UPDATE SET "
-        "checksum=excluded.checksum, imported_at=CURRENT_TIMESTAMP",
+        "ON CONFLICT(source) DO UPDATE SET checksum=excluded.checksum, imported_at=CURRENT_TIMESTAMP",
         (digest,),
     )
     return result["written"]
 
 
-def main():
-    parser = argparse.ArgumentParser(description="获取武汉 OSM 社区餐饮场所")
-    parser.add_argument("action", choices=("fetch",))
-    parser.add_argument("--output", type=Path, default=SNAPSHOT)
-    args = parser.parse_args()
+def collect_live_snapshot(output=LIVE_SNAPSHOT, minimum=100):
+    """Fetch first, validate first; a failed collection never replaces a good file."""
+    from catalog_policy import catalog_cutoff
+
     rows = fetch_wuhan_osm()
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(
-        json.dumps(rows, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
+    today = dt.date.today().isoformat()
+    # A successful live response proves online collection, not operating status.
+    rows = [
+        row
+        for row in rows
+        if not row.get("source_updated_at")
+        or row["source_updated_at"] >= catalog_cutoff()
+    ]
+    rows = validate_real_merchants(
+        [
+            dict(
+                row,
+                source_collected_at=today,
+                evidence_url=row.get("evidence_url") or ENDPOINTS[0],
+            )
+            for row in rows
+        ]
     )
-    print("从武汉部分城市区块的 OpenStreetMap 获取 {} 条带名称餐饮场所。".format(len(rows)))
-    print("注意：城市区块抽样并非全市完整覆盖；社区数据未核验，保留 ODbL 署名。")
+    if len(rows) < minimum:
+        raise ValueError(
+            "实际获取的近五年来源记录只有 {} 条，未达到 {} 条；保留已有数据".format(
+                len(rows), minimum
+            )
+        )
+    metadata = dict(
+        schema_version=1,
+        kind="live_osm",
+        collected_at=today,
+        record_count=len(rows),
+        license="ODbL-1.0",
+        evidence_url=rows[0]["evidence_url"],
+        sha256=hashlib.sha256(
+            json.dumps(rows, ensure_ascii=False, sort_keys=True).encode()
+        ).hexdigest(),
+        notice="日期为在线采集时间，元素更新和逐店调查日期单独保留；当前营业及价格需核实。",
+    )
+    output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output.with_suffix(output.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(dict(metadata=metadata, records=rows), ensure_ascii=False, indent=2)
+        + "\n", encoding="utf-8"
+    )
+    os.replace(temporary, output)
+    return dict(
+        merchants=len(rows),
+        mapped=len(rows),
+        output=str(output),
+        menu_prices="OSM 未提供的菜品价格不补造，需从可核验门店菜单另行补充",
+    )
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="采集近五年武汉公开地图门店，保留来源和真实坐标"
+    )
+    parser.add_argument("action", choices=("fetch",))
+    parser.add_argument("--output", type=Path, default=LIVE_SNAPSHOT)
+    parser.add_argument("--minimum", type=int, default=100)
+    args = parser.parse_args()
+    if not 100 <= args.minimum <= MAX_RECORDS:
+        parser.error("minimum 必须在 100–{} 之间".format(MAX_RECORDS))
+    print(
+        json.dumps(
+            collect_live_snapshot(args.output, args.minimum),
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":

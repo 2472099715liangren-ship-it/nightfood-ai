@@ -25,7 +25,7 @@ class OsmTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.old_path = database.DB_PATH
         database.DB_PATH = Path(self.tmp.name) / "test.db"
-        database.initialize_database(import_snapshot=False, import_bundled_catalog=False)
+        database.initialize_database(import_snapshot=False, import_bundled_catalog=False, include_demo=True)
 
     def tearDown(self):
         database.DB_PATH = self.old_path

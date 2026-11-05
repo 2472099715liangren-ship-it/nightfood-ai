@@ -13,12 +13,9 @@ from urllib.parse import urlencode
 from decision_catalog import list_public_merchants, require_public_merchant
 from decision_preferences import next_question, parse_request, per_person_budget
 
-CUISINE_TERMS = {
-    "清淡": ("粥", "面", "清淡"),
-    "面食": ("面", "粉"),
-    "湖北菜": ("湖北", "鄂菜", "武汉菜"),
-    "素食": ("素食", "素菜"),
-}
+from catalog_language import CUISINE_TERMS, BRAND_ALIASES, display_cuisine
+from catalog_policy import catalog_cutoff
+
 WEEKDAYS = ("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
 
 
@@ -126,6 +123,7 @@ def navigation_links(merchant):
 def describe_merchant(merchant):
     """A single presentation model shared by results, details and comparisons."""
     item = dict(merchant)
+    item["cuisine_display"] = display_cuisine(item["cuisine"])
     item.update(navigation_links(item))
     phone = item.get("phone") or ""
     item["phone_url"] = (
@@ -139,6 +137,19 @@ def describe_merchant(merchant):
         "web_listing": "公开网页资料，营业状态未人工核验",
     }.get(item.get("data_quality"), "资料待确认")
     item["price_notice"] = "来源参考价，实际消费以门店为准"
+    if item.get("source_checked_at"):
+        item["evidence_label"] = "逐店/网页核查 " + item["source_checked_at"]
+    elif item.get("source_collected_at"):
+        item["evidence_label"] = (
+            "在线采集 " + item["source_collected_at"] + "，未逐店核实营业"
+        )
+    elif item.get("source_archived_at"):
+        item["evidence_label"] = (
+            "资料归档 " + item["source_archived_at"] + "，本次未重新采集"
+        )
+    else:
+        item["evidence_label"] = "日期待确认"
+
     return item
 
 
@@ -251,6 +262,9 @@ def _ids(values):
 
 
 def make_decision(connection, preferences, payload, mode="local"):
+    lookup = catalog_lookup(connection, preferences, payload, mode)
+    if lookup is not None:
+        return lookup
     question = next_question(preferences)
     result = dict(
         stage="clarify" if question else "candidates",
@@ -344,3 +358,176 @@ def compare_real_merchants(connection, raw_ids):
         "items": items,
         "notice": "按来源事实并列比较；不使用演示评分。未知价格、营业和距离不作保证。",
     }
+
+
+def catalog_lookup(connection, preferences, payload, mode):
+    """Answer a factual lookup immediately; planning questions remain optional."""
+    from real_catalog import catalog_coverage
+
+    message = str(payload.get("message", "")).strip()
+    all_merchants = list(list_public_merchants(connection))
+    previous = payload.get("previous_ids", [])
+    ordinal = re.search(r"第([一二三123])家", message)
+    topic = (
+        "menu"
+        if any(word in message for word in ("菜单", "菜品", "价格", "多少钱", "单价"))
+        else "overview"
+    )
+    targeted_id = None
+    if ordinal and topic == "menu" and isinstance(previous, list):
+        index = (
+            "一二三".find(ordinal[1]) if ordinal[1] in "一二三" else int(ordinal[1]) - 1
+        )
+        if index < len(previous):
+            targeted_id = int(previous[index])
+    # An explicitly named branch wins over a brand-wide match.
+    normalize = lambda value: re.sub(r"[^\w\u4e00-\u9fff]", "", value).casefold()
+    branch_matches = [
+        item
+        for item in all_merchants
+        if re.search(r"[（(]", item["name"])
+        and normalize(item["name"]) in normalize(message)
+    ]
+    if branch_matches and targeted_id is None:
+        targeted_id = max(branch_matches, key=lambda item: len(item["name"]))["id"]
+    keyword = ""
+    # Match names actually present in the database, including branch-free names.
+    stems = {re.split(r"[（(·]", item["name"])[0].strip() for item in all_merchants}
+    stems.update(BRAND_ALIASES)
+    for name in sorted(stems, key=len, reverse=True):
+        if len(name) >= 2 and name.casefold() in message.casefold():
+            keyword = name
+            break
+    explicit = any(
+        word in message
+        for word in (
+            "查",
+            "搜索",
+            "有哪些",
+            "有什么",
+            "菜单",
+            "菜品",
+            "多少钱",
+            "价格",
+            "地址",
+            "坐标",
+            "数据库",
+            "真实商家",
+        )
+    )
+    has_missing = next_question(preferences) is not None
+    if not (
+        explicit or targeted_id or keyword or (has_missing and preferences["cuisine"])
+    ):
+        return None
+    if not keyword:
+        keyword = preferences["cuisine"]
+    if (
+        not keyword
+        and explicit
+        and not any(
+            word in message for word in ("哪些", "有什么", "数据库", "真实商家", "所有")
+        )
+    ):
+        match = re.search(
+            r"(?:查一下|查下|查询|搜索|查查|找找|找|查)\s*(.+?)(?:的(?:菜单|菜品|价格|地址|坐标)|$)",
+            message,
+        )
+        if match:
+            keyword = match[1].strip(" ，。？?!！")[:80]
+            keyword = keyword.removeprefix("武汉").removesuffix("附近")
+        else:
+            noun = re.search(
+                r"^(.{2,40}?)(?:的)?(?:菜单|菜品|价格|多少钱|地址|坐标)", message
+            )
+            if noun:
+                keyword = noun[1].removesuffix("的").strip(" ，。？?!！")
+
+    if targeted_id is not None:
+        records = [item for item in all_merchants if item["id"] == targeted_id]
+    elif keyword:
+        records = list(list_public_merchants(connection, keyword=keyword))
+    else:
+        records = all_merchants
+    candidates, excluded = [], Counter()
+    for record in records:
+        item, reason = evaluate_merchant(record, preferences)
+        if reason:
+            excluded[reason] += 1
+        else:
+            candidates.append(item)
+    candidates.sort(key=lambda item: item["_order"])
+    if (preferences["location"] or {}).get("latitude") is not None:
+        candidates.sort(
+            key=lambda item: (
+                item["distance_km"] if item["distance_km"] is not None else math.inf
+            )
+        )
+    if topic == "menu":
+        # Prefer sourced menu evidence for a menu lookup, never synthesize a price.
+        priced = {
+            row[0]
+            for row in connection.execute(
+                "SELECT DISTINCT merchant_id FROM real_merchant_menu_items WHERE price IS NOT NULL AND price_checked_at >= ?",
+                (catalog_cutoff(),),
+            )
+        }
+        candidates.sort(key=lambda item: item["id"] not in priced)
+    selected = candidates[:3]
+    for item in selected:
+        item.pop("_order", None)
+        detail = require_public_merchant(connection, item["id"])
+        item.update(
+            menu_items=detail["menu_items"],
+            images=detail["images"],
+            photos=detail["photos"],
+            kept=False,
+        )
+    stats = catalog_coverage(connection)
+    if selected:
+        reply = "在真实资料库中找到 {} 家符合本轮查询的门店，先列出 {} 家。".format(
+            len(candidates), len(selected)
+        )
+        if topic == "menu":
+            reply += "以下是来源记录的参考单价，不是实时门店报价；实际价格和适用期限请向门店确认。"
+            parts = []
+            for item in selected:
+                prices = [
+                    "{} ¥{:g}/{}".format(
+                        dish["dish_name"],
+                        dish["price"],
+                        dish["price_unit"].removeprefix("元/"),
+                    )
+                    for dish in item["menu_items"]
+                    if dish["price"] is not None
+                ]
+                parts.append(
+                    item["name"]
+                    + "："
+                    + (
+                        "；".join(prices[:3])
+                        if prices
+                        else "尚无带来源的菜单单价，不能据此保证预算"
+                    )
+                )
+            reply += "\n" + "\n".join(parts)
+    else:
+        reply = "资料库中没有找到同时满足本轮查询的门店；不会用模拟商家或虚构价格补齐。"
+    return dict(
+        stage="catalog",
+        constraints=preferences,
+        budget_per_person=per_person_budget(preferences),
+        mode=mode,
+        reply=reply,
+        items=selected,
+        eligible_total=len(candidates),
+        excluded=dict(excluded),
+        exhausted=False,
+        catalog_stats=stats,
+        query_keyword=keyword,
+        follow_up=next_question(preferences)
+        or dict(
+            question="还想了解哪家店？",
+            actions=["查蔡林记的菜单价格", "有哪些咖啡店", "江汉路附近有哪些餐厅"],
+        ),
+    )

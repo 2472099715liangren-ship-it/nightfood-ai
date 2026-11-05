@@ -7,10 +7,7 @@
     <title>夜寻 · 今晚去哪吃</title>
     <link rel="stylesheet" href="/style.css" />
     <link rel="stylesheet" href="/decision.css" />
-    <link
-      rel="stylesheet"
-      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    />
+    <link rel="stylesheet" href="/vendor/leaflet/leaflet.css" />
   </head>
   <body>
     <header class="site-header">
@@ -21,7 +18,7 @@
         ></a
       >
       <nav class="main-nav" aria-label="主导航">
-        <button class="nav-link active" data-page="decision">开始挑选</button>
+        <button class="nav-link active" data-page="decision">AI 对话</button>
         <button class="nav-link" data-page="directory">真实商家</button>
         <button class="nav-link" data-page="saved">
           今晚清单 <span id="saved-count">0</span>
@@ -39,10 +36,7 @@
       <div id="merchant-detail"></div>
     </dialog>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script
-      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-      defer
-    ></script>
+    <script src="/vendor/leaflet/leaflet.js" defer></script>
     <script src="/wuhan_map.js" defer></script>
     <script type="module" src="/app.js"></script>
   </body>

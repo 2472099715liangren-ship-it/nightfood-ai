@@ -29,7 +29,7 @@ from database import (
     set_favorite,
     suggestion_summary,
 )
-from services import SCENES, chat
+from services import SCENES
 from comparison import compare_merchants
 from real_catalog import (
     public_real_merchants,
@@ -37,7 +37,7 @@ from real_catalog import (
     get_public_real_merchant,
 )
 from merchant_photos import public_photo_file, safe_image_path
-from decision_catalog import set_real_favorite, saved_real_merchants
+from decision_catalog import set_real_favorite, saved_real_merchants, real_map_catalog
 from dining_decision import (
     prepare_decision,
     make_decision,
@@ -59,6 +59,13 @@ STATIC_FILES = {
     "/api-client.js": "api-client.js",
     "/decision-view.js": "decision-view.js",
     "/decision.css": "decision.css",
+    "/vendor/leaflet/leaflet.js": "vendor/leaflet/leaflet.js",
+    "/vendor/leaflet/leaflet.css": "vendor/leaflet/leaflet.css",
+    "/vendor/leaflet/images/layers.png": "vendor/leaflet/images/layers.png",
+    "/vendor/leaflet/images/layers-2x.png": "vendor/leaflet/images/layers-2x.png",
+    "/vendor/leaflet/images/marker-icon.png": "vendor/leaflet/images/marker-icon.png",
+    "/vendor/leaflet/images/marker-icon-2x.png": "vendor/leaflet/images/marker-icon-2x.png",
+    "/vendor/leaflet/images/marker-shadow.png": "vendor/leaflet/images/marker-shadow.png",
 }
 
 
@@ -171,6 +178,16 @@ class NightFindHandler(BaseHTTPRequestHandler):
                                 os.environ.get("OPENAI_API_KEY", "").strip()
                             ),
                         }
+                    )
+                    return
+
+                if path == "/api/real-map":
+                    self._send_json(
+                        real_map_catalog(
+                            connection,
+                            keyword=query.get("keyword", [""])[0],
+                            district=query.get("district", [""])[0],
+                        )
                     )
                     return
 
@@ -299,7 +316,7 @@ class NightFindHandler(BaseHTTPRequestHandler):
             session_id = self._session_id()
 
             # AI extraction happens before opening a SQLite write transaction.
-            if path == "/api/decision":
+            if path in ("/api/decision", "/api/chat"):
                 preferences, mode = prepare_decision(payload)
                 with connect() as connection:
                     self._send_json(
@@ -319,17 +336,6 @@ class NightFindHandler(BaseHTTPRequestHandler):
                     )
                     connection.commit()
                     self._send_json({"ok": True})
-                    return
-
-                if path == "/api/chat":
-                    result = chat(
-                        connection,
-                        payload,
-                        session_id,
-                        list_districts(connection),
-                    )
-                    connection.commit()
-                    self._send_json(result)
                     return
 
                 if path == "/api/suggestions":

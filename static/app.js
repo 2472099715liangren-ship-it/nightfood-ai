@@ -14,6 +14,7 @@ const dialog = document.getElementById("merchant-dialog");
 const detail = document.getElementById("merchant-detail");
 const state = {
   page: "decision",
+  catalogStats: null,
   result: null,
   history: [],
   saved: new Set(),
@@ -45,11 +46,18 @@ function renderTray() {
   document.getElementById("saved-count").textContent = state.saved.size;
 }
 
+function catalogSummary() {
+  const stats = state.catalogStats;
+  if (!stats) return '<p class="source-note">正在读取真实资料库统计…</p>';
+  return `<p class="catalog-summary" data-catalog-count="${stats.public_total}">真实资料 ${stats.public_total} 家 · 有坐标 ${stats.mapped_total} 家 · 有来源菜品单价 ${stats.priced_menu_items} 条（${stats.priced_merchant_total} 家，其中有坐标 ${stats.priced_mapped_total} 家）</p>
+    <p class="source-note">资料范围为近五年。原归档与本次采集日期分别标注，缺失的价格、营业和地址不补造。</p>`;
+}
+
 function renderDecision() {
   window.NightFindWuhanMap?.dispose();
   const result = state.result;
   root.innerHTML = `<section class="page-intro"><span class="eyebrow">从想吃什么，到决定去哪</span><h1>今晚，选一家适合的店。</h1>
-    <p>说明人数、预算、位置、时间和口味。我们从有来源的真实门店资料中帮你缩小选择。</p></section>
+    <p>直接问店名、菜单或价格，也可以说明人数、预算、位置和时间。对话与地图查询同一个真实商家库。</p>${catalogSummary()}</section>
     <section class="decision-input"><h2>说说你的打算</h2>
       <div id="conversation-log" aria-live="polite">${state.history
         .slice(-6)
@@ -60,14 +68,14 @@ function renderDecision() {
         .join("")}</div>
       <form id="decision-form"><label class="sr-only" for="request-message">你的用餐需求</label><textarea id="request-message" name="message" maxlength="2000" required placeholder="例如：今晚七点，四个人在江汉路附近，总共三百元，想吃湖北菜。" ${state.busy ? "disabled" : ""}></textarea>
         <div class="card-actions"><button class="button-primary" ${state.busy ? "disabled" : ""}>${state.busy ? "正在整理…" : "帮我挑选"}</button><button type="button" data-location ${state.busy ? "disabled" : ""}>使用当前位置</button><button type="button" data-reset ${state.busy ? "disabled" : ""}>重新开始</button></div></form>
-      <div class="quick-actions">${(result?.follow_up?.actions || ["今晚七点，四个人，江汉路附近，总预算300元，湖北菜"]).map((message) => `<button data-message="${e(message)}" ${state.busy ? "disabled" : ""}>${e(message)}</button>`).join("")}</div>
+      <div class="quick-actions">${(result?.follow_up?.actions || ["武汉有哪些真实商家", "有哪些咖啡店", "查金贵源的菜单价格"]).map((message) => `<button data-message="${e(message)}" ${state.busy ? "disabled" : ""}>${e(message)}</button>`).join("")}</div>
       <p class="source-note">${result?.mode === "ai" ? "本轮由 AI 提取条件，门店事实来自资料库。" : result?.mode === "fallback" ? "AI 暂不可用，本轮使用本地条件解析。" : "本地条件解析可直接使用；配置 AI 后可理解更灵活的表达。"}</p>
     </section>
     <section class="conditions" aria-label="已理解的条件"><h2>目前理解的需求</h2>${constraintsView(result?.constraints, result?.budget_per_person)}</section>
     <section id="selected-place" ${state.selected ? "" : "hidden"}>${state.selected ? choiceView(state.selected) : ""}</section>
     ${
       result
-        ? `<section aria-live="polite"><h2>${result.stage === "clarify" ? "先确认一下" : "这次的候选"}</h2><p>${e(result.reply)}</p>
+        ? `<section aria-live="polite"><h2>${result.stage === "clarify" ? "先确认一下" : result.stage === "catalog" ? "真实资料库查询结果" : "这次的候选"}</h2><p class="reply-text">${e(result.reply)}</p>
       ${result.items.length ? `<div class="decision-grid">${merchantCards(result.items, state.saved, state.compared, true)}</div><div class="map-controls"><button data-show-map>在地图上看这几家</button></div><div id="decision-map" class="decision-map" hidden></div>` : ""}
       ${
         Object.keys(result.excluded).length
@@ -113,6 +121,7 @@ async function sendMessage(message, location) {
       state.seen.clear();
     result.items.forEach((item) => state.seen.add(item.id));
     state.result = result;
+    if (result.catalog_stats) state.catalogStats = result.catalog_stats;
     state.history.push({ role: "assistant", text: result.reply });
     state.selected = null;
   } catch (error) {
@@ -133,8 +142,9 @@ async function sendMessage(message, location) {
 }
 
 async function renderDirectory(version) {
-  root.innerHTML = `<section class="page-intro"><h1>${state.page === "saved" ? "今晚清单" : "真实商家资料"}</h1><p>收藏、详情、对比和导航均对应具体分店。网页收录不代表营业状态已人工核验。</p></section>
+  root.innerHTML = `<section class="page-intro"><h1>${state.page === "saved" ? "今晚清单" : "真实商家资料"}</h1><p>全部资料来自真实网上门店记录；网上收录不证明当前营业。菜单单价有来源才展示。</p>${catalogSummary()}</section>
     ${state.page === "directory" ? `<form id="directory-form" class="directory-search"><label>店名、菜系或地址<input name="keyword" value="${e(state.keyword)}" maxlength="80"></label><label>行政区<input name="district" value="${e(state.district)}" placeholder="例如：江汉区"></label><button class="button-primary">搜索</button></form>` : ""}
+    ${state.page === "directory" ? '<section class="directory-map-section"><h2>真实商家地图</h2><p id="directory-map-status">正在加载全部来源坐标…</p><div id="directory-map" class="decision-map" role="region" aria-label="武汉真实商家地图"></div><p class="source-note">地图展示当前筛选下全部有坐标的门店，不受下方列表分页限制。OSM 社区点位和网页收录均不代表实时营业。</p></section>' : ""}
     <div id="directory-results" class="decision-grid"><p>正在读取门店资料…</p></div><div id="directory-pagination" class="card-actions"></div>`;
   const form = document.getElementById("directory-form");
   form?.addEventListener("submit", (event) => {
@@ -152,11 +162,31 @@ async function renderDirectory(version) {
       limit: "30",
       offset: String(state.directoryPage * 30),
     });
-    const response = await request(
-      state.page === "saved"
-        ? "/api/real-favorites"
-        : `/api/real-merchants?${query}`,
-    );
+    const [listResult, mapResult] = await Promise.allSettled([
+      request(
+        state.page === "saved"
+          ? "/api/real-favorites"
+          : `/api/real-merchants?${query}`,
+      ),
+      state.page === "directory"
+        ? request(
+            `/api/real-map?${new URLSearchParams({ keyword: state.keyword, district: state.district })}`,
+          )
+        : Promise.resolve(null),
+    ]);
+    if (version !== pageVersion) return;
+    if (listResult.status === "rejected") throw listResult.reason;
+    const response = listResult.value;
+    if (state.page === "directory") {
+      const container = document.getElementById("directory-map");
+      const status = document.getElementById("directory-map-status");
+      if (mapResult.status === "fulfilled") {
+        const mapped = mapResult.value;
+        const drawn = window.NightFindWuhanMap?.draw(container, mapped.items);
+        container.dataset.pins = drawn?.pins || 0;
+        status.textContent = `筛选命中 ${mapped.total} 家，地图标注 ${drawn?.pins || 0} 家有来源坐标的门店。`;
+      } else status.textContent = "地图资料暂不可用，仍可浏览下方列表。";
+    }
     if (version !== pageVersion) return;
     state.directory = response.items;
     state.directoryTotal = response.total || 0;
@@ -343,8 +373,12 @@ dialog.addEventListener("click", (event) => {
   if (event.target === dialog) dialog.close();
 });
 try {
-  const response = await request("/api/real-favorites");
+  const [response, coverage] = await Promise.all([
+    request("/api/real-favorites"),
+    request("/api/real-merchants/coverage"),
+  ]);
   state.saved = new Set(response.items.map((item) => item.id));
+  state.catalogStats = coverage;
 } catch (error) {
   toast(error.message);
 }

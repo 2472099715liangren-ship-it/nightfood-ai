@@ -3,6 +3,7 @@
 Public web listings are attributed and marked unverified until checked in person.
 Only recent source records are shown; prices and images retain their own sources.
 """
+
 import csv
 import datetime as dt
 import hashlib
@@ -13,23 +14,43 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from database import connect
+from catalog_policy import catalog_cutoff, photo_cutoff, clean_date
+from catalog_language import search_terms
 
 WUHAN_DISTRICTS = (
-    "江岸区", "江汉区", "硚口区", "汉阳区", "武昌区", "青山区",
-    "洪山区", "东西湖区", "蔡甸区", "江夏区", "黄陂区", "新洲区",
+    "江岸区",
+    "江汉区",
+    "硚口区",
+    "汉阳区",
+    "武昌区",
+    "青山区",
+    "洪山区",
+    "东西湖区",
+    "蔡甸区",
+    "江夏区",
+    "黄陂区",
+    "新洲区",
     "汉南区",
 )
 UNKNOWN_DISTRICT = "待确认区县"
 VALID_STATUSES = ("draft", "pending", "verified", "rejected")
 REQUIRED_COLUMNS = (
-    "external_id", "name", "district", "address", "cuisine",
-    "source_name", "source_url", "verified_at", "verification_method",
+    "external_id",
+    "name",
+    "district",
+    "address",
+    "cuisine",
+    "source_name",
+    "source_url",
+    "verified_at",
+    "verification_method",
 )
 
 
 def initialize_real_catalog(connection):
     """Additive migration; original demo restaurants remain untouched."""
-    connection.executescript("""
+    connection.executescript(
+        """
         CREATE TABLE IF NOT EXISTS real_merchants (
             id INTEGER PRIMARY KEY,
             external_id TEXT NOT NULL UNIQUE,
@@ -49,6 +70,10 @@ def initialize_real_catalog(connection):
             source_url TEXT NOT NULL,
             verified_at TEXT,
             source_checked_at TEXT NOT NULL DEFAULT '',
+            source_collected_at TEXT NOT NULL DEFAULT '',
+            source_archived_at TEXT NOT NULL DEFAULT '',
+            source_updated_at TEXT NOT NULL DEFAULT '',
+            evidence_url TEXT NOT NULL DEFAULT '',
             source_published_at TEXT NOT NULL DEFAULT '',
             signature_dishes TEXT NOT NULL DEFAULT '',
             location_note TEXT NOT NULL DEFAULT '',
@@ -119,16 +144,24 @@ def initialize_real_catalog(connection):
         );
         CREATE INDEX IF NOT EXISTS idx_merchant_photos
             ON real_merchant_photos(merchant_id,status);
-    """)
+    """
+    )
     photo_columns = {
-        item["name"] for item in connection.execute("PRAGMA table_info(real_merchant_photos)")
+        item["name"]
+        for item in connection.execute("PRAGMA table_info(real_merchant_photos)")
     }
     if "created_by" not in photo_columns:
         connection.execute(
             "ALTER TABLE real_merchant_photos ADD COLUMN created_by TEXT NOT NULL DEFAULT ''"
         )
-    columns = {item["name"] for item in connection.execute("PRAGMA table_info(real_merchants)")}
+    columns = {
+        item["name"] for item in connection.execute("PRAGMA table_info(real_merchants)")
+    }
     merchant_migrations = {
+        "source_collected_at": "TEXT NOT NULL DEFAULT ''",
+        "source_archived_at": "TEXT NOT NULL DEFAULT ''",
+        "source_updated_at": "TEXT NOT NULL DEFAULT ''",
+        "evidence_url": "TEXT NOT NULL DEFAULT ''",
         "source_published_at": "TEXT NOT NULL DEFAULT ''",
         "signature_dishes": "TEXT NOT NULL DEFAULT ''",
         "location_note": "TEXT NOT NULL DEFAULT ''",
@@ -138,7 +171,9 @@ def initialize_real_catalog(connection):
     }
     for name, definition in merchant_migrations.items():
         if name not in columns:
-            connection.execute("ALTER TABLE real_merchants ADD COLUMN " + name + " " + definition)
+            connection.execute(
+                "ALTER TABLE real_merchants ADD COLUMN " + name + " " + definition
+            )
 
     if "source_checked_at" not in columns:
         connection.execute(
@@ -154,7 +189,15 @@ def _validate(record):
     if not isinstance(record, dict):
         raise ValueError("每条记录必须为对象")
     item = {field: _clean(record.get(field)) for field in REQUIRED_COLUMNS}
-    for key in ("external_id", "name", "district", "address", "cuisine", "source_name", "source_url"):
+    for key in (
+        "external_id",
+        "name",
+        "district",
+        "address",
+        "cuisine",
+        "source_name",
+        "source_url",
+    ):
         if not item[key]:
             raise ValueError("缺少必填字段：" + key)
     if item["district"] not in WUHAN_DISTRICTS and item["district"] != UNKNOWN_DISTRICT:
@@ -173,6 +216,17 @@ def _validate(record):
         if checked > dt.date.today():
             raise ValueError("来源核验日期不能晚于今天")
     item["source_checked_at"] = checked_at
+    for field in ("source_collected_at", "source_archived_at", "source_updated_at"):
+        item[field] = clean_date(record.get(field), field)
+    item["evidence_url"] = _clean(record.get("evidence_url"), 1000)
+    if any(item[key] for key in ("source_collected_at", "source_archived_at")):
+        if item["source_name"] != "OpenStreetMap" or not item["external_id"].startswith(
+            "osm:"
+        ):
+            raise ValueError("快照采集和归档证据仅用于带源 ID 的 OSM 资料")
+        if not item["evidence_url"].startswith("https://"):
+            raise ValueError("快照必须带有可追溯的 HTTPS 证据链接")
+
     published_at = _clean(record.get("source_published_at"), 10)
     if published_at:
         try:
@@ -211,10 +265,15 @@ def _validate(record):
         raise ValueError("纬度和经度必须同时填写或同时留空")
     raw_price = record.get("price_per_person")
     try:
-        item["price_per_person"] = int(raw_price) if raw_price not in ("", None) else None
+        item["price_per_person"] = (
+            int(raw_price) if raw_price not in ("", None) else None
+        )
     except (TypeError, ValueError) as exc:
         raise ValueError("人均价格必须为整数") from exc
-    if item["price_per_person"] is not None and not 0 < item["price_per_person"] <= 2000:
+    if (
+        item["price_per_person"] is not None
+        and not 0 < item["price_per_person"] <= 2000
+    ):
         raise ValueError("人均价格超出允许范围")
     for field in ("price_range_min", "price_range_max"):
         raw_range = record.get(field)
@@ -224,8 +283,11 @@ def _validate(record):
             raise ValueError(field + " 必须为整数") from error
         if item[field] is not None and not 0 < item[field] <= 2000:
             raise ValueError(field + " 超出允许范围")
-    if (item["price_range_min"] is not None and item["price_range_max"] is not None
-            and item["price_range_min"] > item["price_range_max"]):
+    if (
+        item["price_range_min"] is not None
+        and item["price_range_max"] is not None
+        and item["price_range_min"] > item["price_range_max"]
+    ):
         raise ValueError("人均价格区间上下限不合法")
     item["price_range_basis"] = _clean(record.get("price_range_basis")) or "unknown"
     if item["price_range_basis"] not in ("per_person", "dish", "unknown"):
@@ -238,18 +300,24 @@ def _validate(record):
             raise ValueError("发布真实商家前必须填写核验日期和核验方式")
         if not checked_at:
             raise ValueError("已核验门店需要单独的来源核查日期")
-        boundary = _fresh_cutoff()
+        boundary = catalog_cutoff()
         if checked_at < boundary or verified_at < boundary:
             raise ValueError("餐厅资料或人工核验超过两年，不能公开")
     item["status"] = status
     return item
 
 
-def import_real_merchants(connection, records, dry_run=False):
-    """Validate entire batch before writing. Upsert by provider external_id."""
+def validate_real_merchants(records):
+    """Validate a complete batch before any file or database state is changed."""
     prepared = [_validate(record) for record in records]
     if len({row["external_id"] for row in prepared}) != len(prepared):
         raise ValueError("同一批次 external_id 不能重复")
+    return prepared
+
+
+def import_real_merchants(connection, records, dry_run=False):
+    """Validate entire batch before writing. Upsert by provider external_id."""
+    prepared = validate_real_merchants(records)
     if dry_run:
         return {"validated": len(prepared), "written": 0}
     for item in prepared:
@@ -261,16 +329,19 @@ def import_real_merchants(connection, records, dry_run=False):
             ).fetchone()
             if existing and existing["status"] == "verified":
                 continue
-        connection.execute("""
+        connection.execute(
+            """
             INSERT INTO real_merchants (
                 external_id,name,district,address,cuisine,latitude,longitude,
                 phone,price_per_person,price_range_min,price_range_max,price_range_basis,
                 opening_hours,source_name,source_url,verified_at,source_checked_at,
+                source_collected_at,source_archived_at,source_updated_at,evidence_url,
                 source_published_at,signature_dishes,location_note,verification_method,status
             ) VALUES (
                 :external_id,:name,:district,:address,:cuisine,:latitude,:longitude,
                 :phone,:price_per_person,:price_range_min,:price_range_max,:price_range_basis,
                 :opening_hours,:source_name,:source_url,:verified_at,:source_checked_at,
+                :source_collected_at,:source_archived_at,:source_updated_at,:evidence_url,
                 :source_published_at,:signature_dishes,:location_note,:verification_method,:status
             )
             ON CONFLICT(external_id) DO UPDATE SET
@@ -290,13 +361,19 @@ def import_real_merchants(connection, records, dry_run=False):
                 source_name=excluded.source_name,
                 source_url=excluded.source_url, verified_at=excluded.verified_at,
                 source_checked_at=excluded.source_checked_at,
+                source_collected_at=excluded.source_collected_at,
+                source_archived_at=excluded.source_archived_at,
+                source_updated_at=excluded.source_updated_at,
+                evidence_url=excluded.evidence_url,
                 source_published_at=excluded.source_published_at,
                 signature_dishes=excluded.signature_dishes,
                 location_note=CASE WHEN excluded.location_note = ''
                     THEN real_merchants.location_note ELSE excluded.location_note END,
                 verification_method=excluded.verification_method,
                 status=excluded.status, updated_at=CURRENT_TIMESTAMP
-        """, item)
+        """,
+            item,
+        )
     return {"validated": len(prepared), "written": len(prepared)}
 
 
@@ -320,26 +397,26 @@ def read_import_file(path):
 
 
 def _fresh_cutoff(reference=None):
-    """Two calendar years ago, inclusive; leap-day safe."""
-    current = reference or dt.date.today()
-    try:
-        return current.replace(year=current.year - 2).isoformat()
-    except ValueError:
-        return current.replace(year=current.year - 2, day=28).isoformat()
+    """Retained for licensed photo workflows; merchant evidence uses five years."""
+    return photo_cutoff(reference)
 
 
 def _public_filter():
-    """Expose only recent verified records or dated, attributed public listings."""
+    """Five-year online evidence; an archive is never labelled human verification."""
     return (
-        "(source_checked_at >= ? AND ("
-        "(status='verified' AND verified_at >= ?) OR "
-        "(status='pending' AND source_name='OpenStreetMap' "
-        "AND external_id LIKE 'osm:%') OR "
+        "((status='verified' AND source_checked_at >= ? AND verified_at >= ?) OR "
+        "(status='pending' AND source_name='OpenStreetMap' AND external_id LIKE 'osm:%' "
+        "AND max(source_checked_at,source_collected_at,source_archived_at) >= ?) OR "
         "(status='pending' AND external_id LIKE 'web:%' "
         "AND source_name IN ('携程美食林','高德地图','武汉市商务局','武汉市文旅局',"
         "'武汉生活之窗','蔡林记官网','万豪官网','红厨帽') "
-        "AND (source_published_at='' OR source_published_at >= ?))))"
+        "AND source_checked_at >= ? "
+        "AND (source_published_at='' OR source_published_at >= ?)))"
     )
+
+
+def public_parameters():
+    return [catalog_cutoff()] * 5
 
 
 def public_real_merchants(connection, district="", keyword="", limit=100, offset=0):
@@ -347,16 +424,27 @@ def public_real_merchants(connection, district="", keyword="", limit=100, offset
     limit = max(1, min(int(limit), 100))
     offset = max(0, int(offset))
     conditions = [_public_filter()]
-    parameters = [_fresh_cutoff(), _fresh_cutoff(), _fresh_cutoff()]
+    parameters = public_parameters()
     if district:
         if district not in WUHAN_DISTRICTS:
             return {"items": [], "total": 0}
         conditions.append("district = ?")
         parameters.append(district)
     if keyword:
-        conditions.append("(name LIKE ? ESCAPE '\\' OR address LIKE ? ESCAPE '\\' OR cuisine LIKE ? ESCAPE '\\')")
-        term = "%" + keyword[:80].replace("%", r"\%").replace("_", r"\_") + "%"
-        parameters.extend([term] * 3)
+        choices = []
+        for word in search_terms(keyword[:80]):
+            term = (
+                "%"
+                + word.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
+                + "%"
+            )
+            choices.append(
+                "(name LIKE ? ESCAPE '\\' OR address LIKE ? ESCAPE '\\' OR cuisine LIKE ? ESCAPE '\\' "
+                "OR signature_dishes LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM real_merchant_menu_items m "
+                "WHERE m.merchant_id=real_merchants.id AND m.dish_name LIKE ? ESCAPE '\\' AND m.price_checked_at >= ?))"
+            )
+            parameters.extend([term] * 5 + [catalog_cutoff()])
+        conditions.append("(" + " OR ".join(choices) + ")")
     where = " AND ".join(conditions)
     total = connection.execute(
         "SELECT COUNT(*) FROM real_merchants WHERE " + where, parameters
@@ -365,7 +453,7 @@ def public_real_merchants(connection, district="", keyword="", limit=100, offset
         "WITH recent_images AS (SELECT * FROM real_merchant_images WHERE taken_at >= ?) "
         "SELECT id,name,district,address,cuisine,latitude,longitude,"
         "phone,price_per_person,price_range_min,price_range_max,price_range_basis,opening_hours,source_name,source_url,"
-        "verified_at,source_checked_at,source_published_at,signature_dishes,location_note,"
+        "verified_at,source_checked_at,source_collected_at,source_archived_at,source_updated_at,evidence_url,source_published_at,signature_dishes,location_note,"
         "verification_method,"
         "CASE WHEN status='verified' THEN 'verified' "
         "WHEN source_name='OpenStreetMap' THEN 'community' ELSE 'web_listing' END AS data_quality, "
@@ -406,9 +494,12 @@ def public_real_merchants(connection, district="", keyword="", limit=100, offset
         " WHERE i.merchant_id=real_merchants.id ORDER BY "
         "CASE i.image_type WHEN 'storefront' THEN 0 WHEN 'dish' THEN 1 ELSE 2 END,i.id LIMIT 1) AS cover_image_taken_at "
         "FROM real_merchants WHERE " + where + " ORDER BY updated_at DESC,id DESC "
-        "LIMIT ? OFFSET ?", (
-            [_fresh_cutoff()] + [_fresh_cutoff(), _fresh_cutoff()] * 3
-            + parameters + [limit, offset]
+        "LIMIT ? OFFSET ?",
+        (
+            [_fresh_cutoff()]
+            + [_fresh_cutoff(), _fresh_cutoff()] * 3
+            + parameters
+            + [limit, offset]
         ),
     ).fetchall()
     items = []
@@ -417,6 +508,20 @@ def public_real_merchants(connection, district="", keyword="", limit=100, offset
         photo_id = item.pop("photo_id")
         item["photo_url"] = "/real-photo/{}".format(photo_id) if photo_id else None
         items.append(item)
+    if items:
+        by_id = {item["id"]: item for item in items}
+        for item in items:
+            item["priced_menu"] = []
+        placeholders = ",".join("?" for _ in by_id)
+        for dish in connection.execute(
+            "SELECT merchant_id,dish_name,price,price_unit,price_source_url,price_checked_at "
+            "FROM real_merchant_menu_items WHERE merchant_id IN (" + placeholders + ") "
+            "AND price IS NOT NULL AND price_checked_at >= ? ORDER BY id",
+            list(by_id) + [catalog_cutoff()],
+        ):
+            target = by_id[dish["merchant_id"]]["priced_menu"]
+            if len(target) < 3:
+                target.append(dict(dish))
     return {
         "items": items,
         "total": total,
@@ -431,11 +536,11 @@ def get_public_real_merchant(connection, merchant_id):
     row = connection.execute(
         "SELECT id,name,district,address,cuisine,latitude,longitude,phone,"
         "price_per_person,price_range_min,price_range_max,price_range_basis,opening_hours,source_name,source_url,verified_at,"
-        "source_checked_at,source_published_at,signature_dishes,location_note,"
+        "source_checked_at,source_collected_at,source_archived_at,source_updated_at,evidence_url,source_published_at,signature_dishes,location_note,"
         "CASE WHEN status='verified' THEN 'verified' "
         "WHEN source_name='OpenStreetMap' THEN 'community' ELSE 'web_listing' END AS data_quality "
         "FROM real_merchants WHERE id=? AND " + _public_filter(),
-        (merchant_id, boundary, boundary, boundary),
+        [merchant_id] + public_parameters(),
     ).fetchone()
     if row is None:
         return None
@@ -455,56 +560,103 @@ def get_public_real_merchant(connection, merchant_id):
         for photo in photos
     ]
     data["images"] = [
-        dict(image) for image in connection.execute(
+        dict(image)
+        for image in connection.execute(
             "SELECT image_url,image_type,caption,taken_at,author,license,license_url,source_url "
             "FROM real_merchant_images WHERE merchant_id=? AND taken_at >= ? ORDER BY id",
             (merchant_id, boundary),
         )
     ]
     data["menu_items"] = [
-        dict(item) for item in connection.execute(
+        dict(item)
+        for item in connection.execute(
             "SELECT dish_name,price,price_unit,price_source_url,price_checked_at,price_note "
             "FROM real_merchant_menu_items WHERE merchant_id=? AND price_checked_at >= ? ORDER BY id",
-            (merchant_id, boundary),
+            (merchant_id, catalog_cutoff()),
         )
     ]
     return data
 
 
 def catalog_coverage(connection):
-    """Count independently verified and community-mapped records separately."""
-    counts = {row: 0 for row in WUHAN_DISTRICTS}
-    boundary = _fresh_cutoff()
-    for item in connection.execute(
-        "SELECT district,COUNT(*) AS n FROM real_merchants "
-        "WHERE status='verified' AND verified_at >= ? AND source_checked_at >= ? "
-        "GROUP BY district", (boundary, boundary)
-    ):
-        counts[item["district"]] = item["n"]
-    community = connection.execute(
-        "SELECT COUNT(*) FROM real_merchants WHERE status='pending' "
-        "AND source_name='OpenStreetMap' AND external_id LIKE 'osm:%' "
-        "AND source_checked_at >= ?", (boundary,)
-    ).fetchone()[0]
-    candidate_total = connection.execute(
-        "SELECT COUNT(*) FROM real_merchants WHERE status='pending' "
-        "AND source_name='OpenStreetMap' AND external_id LIKE 'osm:%'"
-    ).fetchone()[0]
-    web_total = connection.execute(
-        "SELECT COUNT(*) FROM real_merchants WHERE " + _public_filter() +
-        " AND status='pending' AND external_id LIKE 'web:%'",
-        (_fresh_cutoff(), _fresh_cutoff(), _fresh_cutoff()),
-    ).fetchone()[0]
-    return {
-        "city": "武汉市",
-        "verified_total": sum(counts.values()),
-        "community_total": community,
-        "web_listing_total": web_total,
-        "candidate_total": candidate_total,
-        "freshness_cutoff": boundary,
-        "districts": [{"name": key, "verified_count": value} for key, value in counts.items()],
-        "notice": "公开网页目录按本次采集/核对日期筛选，不等于营业状态已人工确认；人均价仅供参考，单品价以门店菜单为准。未记录 OSM 逐店调查日期的候选不会公开。",
+    """Report provenance and actual coverage without claiming all stores are open."""
+    params = public_parameters()
+    where = _public_filter()
+    counts = list(
+        connection.execute(
+            "SELECT district,count(*) total,sum(status='verified') verified_count FROM real_merchants "
+            "WHERE " + where + " GROUP BY district",
+            params,
+        )
+    )
+    quality = {
+        row["quality"]: row["total"]
+        for row in connection.execute(
+            "SELECT CASE WHEN status='verified' THEN 'verified' WHEN source_name='OpenStreetMap' "
+            "THEN 'community' ELSE 'web_listing' END quality,count(*) total "
+            "FROM real_merchants WHERE " + where + " GROUP BY quality",
+            params,
+        )
     }
+    mapped = connection.execute(
+        "SELECT count(*) FROM real_merchants WHERE "
+        + where
+        + " AND latitude IS NOT NULL AND longitude IS NOT NULL",
+        params,
+    ).fetchone()[0]
+    verified = sum(row["verified_count"] for row in counts)
+    total = sum(row["total"] for row in counts)
+    priced_menus = connection.execute(
+        "SELECT count(*) FROM real_merchant_menu_items m JOIN real_merchants r ON r.id=m.merchant_id "
+        "WHERE m.price IS NOT NULL AND m.price_checked_at >= ? AND r.id IN "
+        "(SELECT id FROM real_merchants WHERE " + where + ")",
+        [catalog_cutoff()] + params,
+    ).fetchone()[0]
+    priced_merchants = connection.execute(
+        "SELECT count(DISTINCT m.merchant_id) FROM real_merchant_menu_items m WHERE m.price IS NOT NULL "
+        "AND m.price_checked_at >= ? AND m.merchant_id IN (SELECT id FROM real_merchants WHERE "
+        + where
+        + ")",
+        [catalog_cutoff()] + params,
+    ).fetchone()[0]
+    priced_mapped = connection.execute(
+        "SELECT count(DISTINCT m.merchant_id) FROM real_merchant_menu_items m JOIN real_merchants r ON r.id=m.merchant_id "
+        "WHERE m.price IS NOT NULL AND m.price_checked_at >= ? AND r.latitude IS NOT NULL AND r.longitude IS NOT NULL "
+        "AND r.id IN (SELECT id FROM real_merchants WHERE " + where + ")",
+        [catalog_cutoff()] + params,
+    ).fetchone()[0]
+    return dict(
+        city="武汉市",
+        priced_merchant_total=priced_merchants,
+        priced_mapped_total=priced_mapped,
+        public_total=total,
+        mapped_total=mapped,
+        verified_total=verified,
+        community_total=quality.get("community", 0),
+        web_listing_total=quality.get("web_listing", 0),
+        unassigned_district_total=next(
+            (row["total"] for row in counts if row["district"] == UNKNOWN_DISTRICT), 0
+        ),
+        priced_menu_items=priced_menus,
+        freshness_cutoff=catalog_cutoff(),
+        candidate_total=connection.execute(
+            "SELECT count(*) FROM real_merchants WHERE source_name='OpenStreetMap'"
+        ).fetchone()[0],
+        districts=[
+            dict(
+                name=district,
+                public_count=next(
+                    (r["total"] for r in counts if r["district"] == district), 0
+                ),
+                verified_count=next(
+                    (r["verified_count"] for r in counts if r["district"] == district),
+                    0,
+                ),
+            )
+            for district in WUHAN_DISTRICTS
+        ],
+        notice="近五年的公开资料；采集、归档与人工核查日期分别展示。网上收录不证明当前营业，缺失价格不补造。",
+    )
 
 
 def seed_bundled_catalog(connection, data_dir=None):
@@ -552,8 +704,11 @@ def seed_bundled_catalog(connection, data_dir=None):
                         checked = dt.date.fromisoformat(checked_at)
                     except ValueError as error:
                         raise ValueError("菜品价格核查日期必须为 YYYY-MM-DD") from error
-                    if checked > dt.date.today() or checked.isoformat() < _fresh_cutoff():
-                        raise ValueError("菜品价格资料必须在最近两年内")
+                    if (
+                        checked > dt.date.today()
+                        or checked.isoformat() < catalog_cutoff()
+                    ):
+                        raise ValueError("菜品价格资料必须在最近五年内")
                 source_url = _clean(item.get("price_source_url"), 1000)
                 if not re.match(r"^https://[^\s/]+\.[^\s/]+", source_url):
                     raise ValueError("菜品价格必须附带 HTTPS 来源")
@@ -570,14 +725,22 @@ def seed_bundled_catalog(connection, data_dir=None):
                         price_note=excluded.price_note
                     """,
                     (
-                        merchant["id"], _clean(item.get("dish_name"), 100),
-                        price, _clean(item.get("price_unit"), 30) or "元/份",
-                        source_url, checked_at, _clean(item.get("price_note"), 300),
+                        merchant["id"],
+                        _clean(item.get("dish_name"), 100),
+                        price,
+                        _clean(item.get("price_unit"), 30) or "元/份",
+                        source_url,
+                        checked_at,
+                        _clean(item.get("price_note"), 300),
                     ),
                 )
                 totals["menu_items"] += 1
         else:
-            allowed_hosts = {"thumb.wikimedia.org", "upload.wikimedia.org", "commons.wikimedia.org"}
+            allowed_hosts = {
+                "thumb.wikimedia.org",
+                "upload.wikimedia.org",
+                "commons.wikimedia.org",
+            }
             allowed_licenses = {"CC BY 4.0", "CC BY-SA 4.0", "CC0 1.0"}
             for item in records:
                 merchant = connection.execute(
@@ -590,12 +753,19 @@ def seed_bundled_catalog(connection, data_dir=None):
                 source_url = _clean(item.get("source_url"), 1500)
                 license_url = _clean(item.get("license_url"), 500)
                 image_host = urlsplit(image_url).hostname
-                if urlsplit(image_url).scheme != "https" or image_host not in allowed_hosts:
+                if (
+                    urlsplit(image_url).scheme != "https"
+                    or image_host not in allowed_hosts
+                ):
                     raise ValueError("图片必须来自已审核的 Wikimedia 图片域名")
-                if not source_url.startswith("https://commons.wikimedia.org/wiki/File:"):
+                if not source_url.startswith(
+                    "https://commons.wikimedia.org/wiki/File:"
+                ):
                     raise ValueError("图片必须附带 Wikimedia 原始文件页")
                 license_name = _clean(item.get("license"), 40)
-                if license_name not in allowed_licenses or not license_url.startswith("https://creativecommons.org/"):
+                if license_name not in allowed_licenses or not license_url.startswith(
+                    "https://creativecommons.org/"
+                ):
                     raise ValueError("图片授权信息不完整或不受支持")
                 taken_at = _clean(item.get("taken_at"), 10)
                 try:
@@ -622,10 +792,15 @@ def seed_bundled_catalog(connection, data_dir=None):
                         source_url=excluded.source_url
                     """,
                     (
-                        merchant["id"], image_url, image_type,
-                        _clean(item.get("caption"), 240), taken_at,
-                        _clean(item.get("author"), 100), license_name,
-                        license_url, source_url,
+                        merchant["id"],
+                        image_url,
+                        image_type,
+                        _clean(item.get("caption"), 240),
+                        taken_at,
+                        _clean(item.get("author"), 100),
+                        license_name,
+                        license_url,
+                        source_url,
                     ),
                 )
                 totals["images"] += 1
