@@ -7,6 +7,8 @@ window.NightFindWuhanMap = (() => {
   let map, markerLayer, labelLayer, currentContainer, allBounds;
   let generation = 0;
   let basemapRequest;
+  let settingsRequest;
+  let routeLayer;
   const markers = new Map();
   const escape = (value) =>
     String(value ?? "").replace(
@@ -24,7 +26,13 @@ window.NightFindWuhanMap = (() => {
   function dispose() {
     generation += 1;
     if (map) map.remove();
-    map = markerLayer = labelLayer = currentContainer = allBounds = null;
+    map =
+      markerLayer =
+      labelLayer =
+      currentContainer =
+      allBounds =
+      routeLayer =
+        null;
     markers.clear();
   }
 
@@ -116,30 +124,63 @@ window.NightFindWuhanMap = (() => {
     updateLabels();
   }
 
-  function tryStreetTiles(container, version) {
-    // The local map is always underneath. A blocked tile service can never
-    // turn it into a blank canvas. Do not prefetch or bulk-download OSM tiles.
-    const tiles = L.tileLayer(
-      "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-      {
-        maxZoom: 18,
-        pane: "streetTiles",
-      },
-    );
-    container.dataset.streets = "loading";
-    tiles.on("tileerror", () => {
-      if (version !== generation) return;
-      tiles.remove();
-      map.getPane("placeLabels").style.opacity = "1";
-      container.dataset.streets = "unavailable";
-    });
-    tiles.on("load", () => {
-      if (version !== generation || container.dataset.streets === "unavailable")
-        return;
-      map.getPane("placeLabels").style.opacity = "0";
-      container.dataset.streets = "ready";
-    });
-    tiles.addTo(map);
+  async function tryStreetTiles(container, version) {
+    if (!settingsRequest)
+      settingsRequest = fetch("/api/map-config")
+        .then((response) => (response.ok ? response.json() : {}))
+        .catch(() => ({}));
+    const settings = await settingsRequest;
+    if (version !== generation) return;
+
+    function addProvider(provider) {
+      const options = { maxZoom: 18, pane: "streetTiles" };
+      const layers =
+        provider === "tianditu"
+          ? ["vec", "cva"].map((layer) =>
+              L.tileLayer(
+                `https://t{s}.tianditu.gov.cn/${layer}_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=${layer}&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=${encodeURIComponent(settings.tianditu_key)}`,
+                {
+                  ...options,
+                  subdomains: "01234567",
+                  attribution:
+                    '© <a href="https://www.tianditu.gov.cn/" target="_blank" rel="noopener noreferrer">天地图</a>',
+                },
+              ),
+            )
+          : [
+              L.tileLayer(
+                "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                options,
+              ),
+            ];
+      const group = L.layerGroup(layers);
+      let failed = false;
+      const ready = new Set();
+      container.dataset.streets = "loading";
+      for (const layer of layers) {
+        layer.on("tileerror", () => {
+          if (version !== generation || failed) return;
+          failed = true;
+          group.remove();
+          map.getPane("placeLabels").style.opacity = "1";
+          if (provider === "tianditu") return addProvider("osm");
+          container.dataset.streets = "unavailable";
+          container.dataset.provider = "offline";
+        });
+        layer.on("load", () => {
+          if (version !== generation || failed) return;
+          ready.add(layer);
+          if (ready.size !== layers.length) return;
+          map.getPane("placeLabels").style.opacity = "0";
+          container.dataset.streets = "ready";
+          container.dataset.provider = provider;
+        });
+      }
+      group.addTo(map);
+    }
+    // Both TianDiTu's CGCS2000 Web Mercator and OSM align with our WGS84
+    // geographic points at this scale. Never put GCJ-02 points on this map.
+    addProvider(settings.tianditu_key ? "tianditu" : "osm");
   }
 
   function popup(item, lat, lng) {
@@ -159,7 +200,10 @@ window.NightFindWuhanMap = (() => {
 
   async function draw(container, restaurants, { overview = false } = {}) {
     if (!container || !window.L) return { available: false, pins: 0 };
+    if (currentContainer && currentContainer !== container)
+      currentContainer.hidden = true;
     dispose();
+    container.hidden = false;
     const version = generation;
     currentContainer = container;
     container.dataset.basemap = "loading";
@@ -251,5 +295,36 @@ window.NightFindWuhanMap = (() => {
     if (map && allBounds)
       map.fitBounds(allBounds, { maxZoom: 14, animate: false });
   }
-  return { draw, dispose, focus, fitAll };
+  function view() {
+    if (!map) return null;
+    const center = map.getCenter();
+    return { latitude: center.lat, longitude: center.lng, zoom: map.getZoom() };
+  }
+
+  function restoreView(value) {
+    if (
+      map &&
+      value &&
+      Number.isFinite(value.latitude) &&
+      Number.isFinite(value.longitude)
+    )
+      map.setView([value.latitude, value.longitude], value.zoom, {
+        animate: false,
+      });
+  }
+
+  function showRoute(points) {
+    if (!map || !points?.length) return;
+    if (routeLayer) routeLayer.remove();
+    routeLayer = L.polyline(points, {
+      color: "#486d91",
+      weight: 5,
+      opacity: 0.85,
+    }).addTo(map);
+    map.fitBounds(routeLayer.getBounds().pad(0.15), {
+      maxZoom: 16,
+      animate: false,
+    });
+  }
+  return { draw, dispose, focus, fitAll, view, restoreView, showRoute };
 })();

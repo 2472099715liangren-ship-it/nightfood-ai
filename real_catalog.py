@@ -202,8 +202,17 @@ def _validate(record):
             raise ValueError("缺少必填字段：" + key)
     if item["district"] not in WUHAN_DISTRICTS and item["district"] != UNKNOWN_DISTRICT:
         raise ValueError("行政区不属于武汉市：" + item["district"])
-    if item["district"] == "待确认区县" and item["source_name"] != "OpenStreetMap":
-        raise ValueError("待确认区县仅允许用于开放地图导入")
+    if item["district"] == UNKNOWN_DISTRICT:
+        mapped_web = (
+            item["source_name"] == "携程美食林"
+            and item["external_id"].startswith("web:")
+            and urlsplit(item["source_url"]).hostname == "gs.ctrip.com"
+            and record.get("latitude") not in (None, "")
+            and record.get("longitude") not in (None, "")
+            and record.get("source_checked_at")
+        )
+        if item["source_name"] != "OpenStreetMap" and not mapped_web:
+            raise ValueError("未知行政区需要带有来源坐标的武汉商家资料")
     url = item["source_url"]
     if not re.match(r"^https://[^\s/]+\.[^\s/]+", url):
         raise ValueError("来源链接必须为有效 HTTPS URL")

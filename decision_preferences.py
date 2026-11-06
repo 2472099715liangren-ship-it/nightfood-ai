@@ -8,6 +8,8 @@ import json
 import math
 import os
 import re
+from functools import lru_cache
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from urllib.error import URLError
 from urllib.request import Request, urlopen
@@ -82,6 +84,18 @@ def chinese_number(text):
     return total + current
 
 
+@lru_cache(maxsize=1)
+def metro_locations():
+    """Names and WGS84 points come from the bundled OSM basemap, not the model."""
+    path = Path(__file__).resolve().parent / "static" / "map" / "wuhan-basemap.geojson"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return {
+        feature["properties"]["name"]: feature["geometry"]["coordinates"]
+        for feature in data["features"]
+        if feature["properties"]["layer"] == "station"
+    }
+
+
 def resolve_location(value):
     """Only known local landmarks and explicit device coordinates are resolved."""
     if not isinstance(value, dict):
@@ -106,6 +120,15 @@ def resolve_location(value):
                 longitude=None,
                 district=district,
                 note="仅按行政区筛选，尚不能计算距离",
+            )
+    for station, (lng, lat) in metro_locations().items():
+        if name in (station, station + "站", station + "地铁站", station + "附近"):
+            return dict(
+                name=station + "地铁站",
+                latitude=lat,
+                longitude=lng,
+                district="",
+                note="OSM 地铁站中心近似位置，非具体出入口；距离为直线估算",
             )
     if value.get("latitude") is not None or value.get("longitude") is not None:
         lat, lng = float(value.get("latitude")), float(value.get("longitude"))
@@ -331,6 +354,13 @@ def parse_request(message, context=None, location=None, now=None):
     if "现在" in text:
         changes["arrival_date_inferred"] = False
         changes["arrival"] = now.isoformat(timespec="minutes")
+    if "location" not in changes:
+        for station in sorted(metro_locations(), key=len, reverse=True):
+            if len(station) >= 3 and (
+                station + "站" in message or station + "附近" in message
+            ):
+                changes["location"] = {"name": station + "地铁站"}
+                break
     for cuisine in CUISINES:
         if cuisine in message and not re.search(r"(?:不吃|不要)" + cuisine, message):
             changes["cuisine"] = cuisine

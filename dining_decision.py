@@ -11,10 +11,16 @@ from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
 from decision_catalog import list_public_merchants, require_public_merchant
-from decision_preferences import next_question, parse_request, per_person_budget
+from decision_preferences import (
+    next_question,
+    parse_request,
+    per_person_budget,
+    validate_preferences,
+)
 
 from catalog_language import CUISINE_TERMS, BRAND_ALIASES, display_cuisine
 from catalog_policy import catalog_cutoff
+from geo_coordinates import wgs84_to_gcj02
 
 WEEKDAYS = ("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
 
@@ -34,7 +40,15 @@ def opening_status(raw, arrival):
         return "open"
     raw = re.sub(r"[至~–—]", "-", raw).replace("：", ":")
     schedules = []
+    sections = []
     for section in raw.split(";"):
+        prefix = re.match(
+            r"((?:Mo|Tu|We|Th|Fr|Sa|Su)(?:-(?:Mo|Tu|We|Th|Fr|Sa|Su))?\s+)",
+            section.strip(),
+        )
+        for index, interval in enumerate(section.strip().split(",")):
+            sections.append((prefix[1] if index and prefix else "") + interval.strip())
+    for section in sections:
         match = re.fullmatch(
             r"(?:(Mo|Tu|We|Th|Fr|Sa|Su)(?:-(Mo|Tu|We|Th|Fr|Sa|Su))?\s+)?(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})",
             section.strip(),
@@ -96,28 +110,39 @@ def price_ceiling(merchant):
 
 def navigation_links(merchant):
     name = merchant["name"]
-    query = "武汉市 " + merchant["district"] + " " + merchant["address"] + " " + name
+    district = merchant["district"] if "待确认" not in merchant["district"] else ""
+    address = merchant["address"]
+    if any(word in address for word in ("待核实", "待确认", "来源地图")):
+        address = ""
+    query = " ".join(part for part in ("武汉市", district, address, name) if part)
+    search = "https://uri.amap.com/search?" + urlencode(
+        dict(keyword=query, city="武汉", src="nightfind", callnative=0)
+    )
     has_coordinates = (
         merchant.get("latitude") is not None and merchant.get("longitude") is not None
     )
-    destination = (
-        "{},{}".format(merchant["latitude"], merchant["longitude"])
-        if has_coordinates
-        else query
-    )
-    return {
-        "navigation_url": "https://www.google.com/maps/dir/?"
-        + urlencode({"api": 1, "destination": destination, "travelmode": "walking"}),
-        "map_search_url": "https://uri.amap.com/search?"
-        + urlencode(
-            {"keyword": query, "city": "武汉", "src": "nightfind", "callnative": 1}
-        ),
-        "navigation_notice": (
-            "坐标为来源提供的近似点位，请核对具体分店。"
+    if has_coordinates:
+        lat, lng = wgs84_to_gcj02(merchant["latitude"], merchant["longitude"])
+        navigation = "https://uri.amap.com/navigation?" + urlencode(
+            dict(
+                to=f"{lng:.6f},{lat:.6f},{name}",
+                mode="walk",
+                coordinate="gaode",
+                src="nightfind",
+                callnative=0,
+            )
+        )
+    else:
+        navigation = search
+    return dict(
+        navigation_url=navigation,
+        map_search_url=search,
+        navigation_notice=(
+            "按来源坐标定位，请核对分店与具体入口。"
             if has_coordinates
-            else "暂无坐标，将按名称和地址查找；请在地图中核对具体分店。"
+            else "尚无可靠坐标，按店名与地址查找，请核对具体分店。"
         ),
-    }
+    )
 
 
 def describe_merchant(merchant):
@@ -247,6 +272,15 @@ def prepare_decision(payload):
     message = str(payload.get("message", "")).strip()
     if not message or len(message) > 2000:
         raise ValueError("请写下 1–2000 个字符的需求")
+    if "preferences" in payload:
+        if not isinstance(payload["preferences"], dict):
+            raise ValueError("用餐条件需要是对象")
+        preferences = validate_preferences(payload["preferences"])
+        if payload["preferences"].get("location") and preferences["location"] is None:
+            raise ValueError(
+                "暂未识别出发位置，请选择江汉路、楚河汉街、光谷、粮道街、地铁站或武汉行政区，也可使用当前位置"
+            )
+        return preferences, "local"
     return parse_request(message, payload.get("context"), payload.get("location"))
 
 
@@ -260,7 +294,11 @@ def _ids(values):
 
 
 def make_decision(connection, preferences, payload, mode="local"):
-    lookup = catalog_lookup(connection, preferences, payload, mode)
+    lookup = (
+        None
+        if payload.get("intent") == "plan"
+        else catalog_lookup(connection, preferences, payload, mode)
+    )
     if lookup is not None:
         return lookup
     question = next_question(preferences)

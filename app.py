@@ -44,6 +44,7 @@ from dining_decision import (
     describe_merchant,
     compare_real_merchants,
 )
+from map_services import public_map_config, walking_route
 
 
 ROOT = Path(__file__).resolve().parent
@@ -59,6 +60,7 @@ STATIC_FILES = {
     "/map/wuhan-basemap.geojson": "map/wuhan-basemap.geojson",
     "/botanical.svg": "botanical.svg",
     "/api-client.js": "api-client.js",
+    "/session-store.js": "session-store.js",
     "/decision-view.js": "decision-view.js",
     "/decision.css": "decision.css",
     "/vendor/leaflet/leaflet.js": "vendor/leaflet/leaflet.js",
@@ -162,6 +164,9 @@ class NightFindHandler(BaseHTTPRequestHandler):
         try:
             session_id = self._session_id(required=False)
             query = parse_qs(parsed.query)
+            if path == "/api/map-config":
+                self._send_json(public_map_config())
+                return
             with connect() as connection:
                 if path == "/api/health":
                     self._send_json({"status": "ok", "app": "NightFind"})
@@ -316,6 +321,20 @@ class NightFindHandler(BaseHTTPRequestHandler):
         try:
             payload = self._read_json()
             session_id = self._session_id()
+
+            if path == "/api/walking-route":
+                raw_id = payload.get("merchant_id")
+                if isinstance(raw_id, bool) or not isinstance(raw_id, (int, str)):
+                    raise ValueError("门店编号无效")
+                merchant_id = int(raw_id)
+                with connect() as connection:
+                    merchant = get_public_real_merchant(connection, merchant_id)
+                if merchant is None:
+                    raise ValueError("门店资料不存在，请重新选择")
+                self._send_json(
+                    walking_route(payload.get("origin"), describe_merchant(merchant))
+                )
+                return
 
             # AI extraction happens before opening a SQLite write transaction.
             if path in ("/api/decision", "/api/chat"):

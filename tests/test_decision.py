@@ -379,11 +379,46 @@ class DecisionHttpTests(unittest.TestCase):
                 )
                 self.assertEqual(len(comparison["items"]), 2)
                 item = comparison["items"][0]
-                self.assertIn("destination=", item["navigation_url"])
+                self.assertIn("to=", item["navigation_url"])
+                self.assertIn("coordinate=gaode", item["navigation_url"])
                 self.assertIn("uri.amap.com", item["map_search_url"])
                 detail = call("/api/real-merchants/" + str(item["id"]))
                 self.assertEqual(detail["name"], item["name"])
                 self.assertIn("menu_items", detail)
+                with patch.dict(os.environ, {"AMAP_WEB_KEY": ""}):
+                    config = call("/api/map-config")
+                    self.assertFalse(config["walking_enabled"])
+                    route = call(
+                        "/api/walking-route",
+                        {
+                            "merchant_id": item["id"],
+                            "origin": {
+                                "name": "江汉路",
+                                "latitude": 30.586,
+                                "longitude": 114.291,
+                            },
+                        },
+                    )
+                    self.assertEqual(route["status"], "unconfigured")
+                    self.assertIn("uri.amap.com/navigation", route["navigation_url"])
+                edited = call(
+                    "/api/decision",
+                    {
+                        "message": "修改用餐条件",
+                        "intent": "plan",
+                        "preferences": {
+                            "party_size": 3,
+                            "budget": 180,
+                            "budget_kind": "total",
+                            "location": {"name": "江汉路"},
+                            "arrival": (
+                                datetime.now(LOCAL_ZONE) + timedelta(hours=2)
+                            ).isoformat(),
+                        },
+                    },
+                )
+                self.assertEqual(edited["constraints"]["party_size"], 3)
+                self.assertEqual(edited["budget_per_person"], 60)
                 call("/api/real-favorites", {"merchant_id": item["id"], "active": True})
                 self.assertEqual(
                     call("/api/real-favorites")["items"][0]["name"], item["name"]
@@ -398,6 +433,7 @@ class DecisionHttpTests(unittest.TestCase):
                     "/",
                     "/app.js",
                     "/api-client.js",
+                    "/session-store.js",
                     "/decision-view.js",
                     "/decision.css",
                     "/wuhan_map.js",

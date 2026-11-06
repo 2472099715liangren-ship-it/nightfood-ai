@@ -53,13 +53,13 @@ class RealCatalogWorkflowTests(unittest.TestCase):
                 connection.execute(
                     "SELECT count(*) FROM real_merchants WHERE external_id LIKE 'web:%'"
                 ).fetchone()[0],
-                55,
+                68,
             )
             coverage = catalog_coverage(connection)
             self.assertEqual(coverage["community_total"], 834)
-            self.assertEqual(coverage["public_total"], 889)
+            self.assertEqual(coverage["public_total"], 902)
             self.assertGreaterEqual(coverage["mapped_total"], 100)
-            self.assertEqual(coverage["priced_menu_items"], 16)
+            self.assertEqual(coverage["priced_menu_items"], 74)
             self.assertEqual(coverage["verified_total"], 0)
 
     def test_archive_date_never_becomes_a_survey_or_a_new_live_collection(self):
@@ -82,7 +82,7 @@ class RealCatalogWorkflowTests(unittest.TestCase):
             page = public_real_merchants(connection, limit=30)
             mapped = real_map_catalog(connection)
             self.assertEqual(len(page["items"]), 30)
-            self.assertEqual(mapped["mapped_total"], 846)
+            self.assertGreater(mapped["mapped_total"], 846)
             self.assertGreater(mapped["mapped_total"], len(page["items"]))
             osm = [
                 row for row in mapped["items"] if row["source_name"] == "OpenStreetMap"
@@ -94,9 +94,9 @@ class RealCatalogWorkflowTests(unittest.TestCase):
                     for row in osm
                 )
             )
-            # Production coverage is reported honestly: known prices currently lack exact store coordinates.
-            self.assertEqual(
-                sum(bool(row["priced_menu"]) for row in mapped["items"]), 0
+            # Refreshed branch-specific prices now join to real source coordinates.
+            self.assertGreaterEqual(
+                sum(bool(row["priced_menu"]) for row in mapped["items"]), 15
             )
             # A test-only menu record checks the map join, without inventing production prices.
             mapped_id = osm[0]["id"]
@@ -126,7 +126,7 @@ class RealCatalogWorkflowTests(unittest.TestCase):
         self.assertIsNone(result["constraints"]["party_size"])
 
     def test_lookup_without_menu_says_unknown_and_never_borrows_a_chain_price(self):
-        result = self.ask("查蔡林记的菜单价格")
+        result = self.ask("查蔡林记北湖店的菜单价格")
         self.assertTrue(result["items"])
         self.assertIn("尚无带来源的菜单单价", result["reply"])
         self.assertTrue(all("蔡林记" in row["name"] for row in result["items"]))

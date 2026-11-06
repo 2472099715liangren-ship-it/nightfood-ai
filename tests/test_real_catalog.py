@@ -1,4 +1,5 @@
 """Real-merchant catalog tests: publication gates, import, coverage and isolation."""
+
 import tempfile
 import unittest
 from datetime import date, timedelta
@@ -6,8 +7,13 @@ from pathlib import Path
 
 import database
 from real_catalog import (
-    WUHAN_DISTRICTS, catalog_coverage, import_real_merchants,
-    public_real_merchants, read_import_file, seed_bundled_catalog, get_public_real_merchant,
+    WUHAN_DISTRICTS,
+    catalog_coverage,
+    import_real_merchants,
+    public_real_merchants,
+    read_import_file,
+    seed_bundled_catalog,
+    get_public_real_merchant,
 )
 
 
@@ -33,7 +39,9 @@ class RealCatalogTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.old_path = database.DB_PATH
         database.DB_PATH = Path(self.tmp.name) / "catalog.db"
-        database.initialize_database(import_snapshot=False, import_bundled_catalog=False, include_demo=True)
+        database.initialize_database(
+            import_snapshot=False, import_bundled_catalog=False, include_demo=True
+        )
 
     def tearDown(self):
         database.DB_PATH = self.old_path
@@ -41,6 +49,7 @@ class RealCatalogTests(unittest.TestCase):
 
     def test_expired_and_undated_records_are_hidden(self):
         from catalog_policy import catalog_cutoff
+
         checked = record("old-check")
         cutoff = date.fromisoformat(catalog_cutoff())
         checked["source_checked_at"] = (cutoff - timedelta(days=1)).isoformat()
@@ -61,13 +70,13 @@ class RealCatalogTests(unittest.TestCase):
     def test_bundled_catalog_has_real_records_images_and_menu_prices(self):
         with database.connect() as connection:
             result = seed_bundled_catalog(connection)
-            self.assertEqual(result["merchants"], 55)
+            self.assertEqual(result["merchants"], 68)
             public = public_real_merchants(connection, limit=100)
-            self.assertEqual(public["total"], 55)
+            self.assertEqual(public["total"], 68)
             self.assertGreater(result["images"], 50)
             self.assertGreater(result["menu_items"], 60)
             self.assertTrue(any(item["cover_image_url"] for item in public["items"]))
-            first = public["items"][0]
+            first = next(item for item in public["items"] if item["cover_image_url"])
             detail = get_public_real_merchant(connection, first["id"])
             self.assertTrue(detail["images"])
             self.assertTrue(detail["menu_items"])
@@ -104,8 +113,15 @@ class RealCatalogTests(unittest.TestCase):
                    SET latitude=?, longitude=?, location_note=?,
                        phone=?, opening_hours=?, price_per_person=?
                    WHERE external_id=?""",
-                (30.59, 114.30, "地理编码后人工复核",
-                 "027-12345678", "17:00-23:00", 76, "web:wuhan-local"),
+                (
+                    30.59,
+                    114.30,
+                    "地理编码后人工复核",
+                    "027-12345678",
+                    "17:00-23:00",
+                    76,
+                    "web:wuhan-local",
+                ),
             )
 
             refreshed = dict(initial)
@@ -151,10 +167,12 @@ class RealCatalogTests(unittest.TestCase):
         with database.connect() as connection:
             with self.assertRaisesRegex(ValueError, "纬度和经度必须"):
                 import_real_merchants(connection, [incomplete])
-            self.assertIsNone(connection.execute(
-                "SELECT id FROM real_merchants WHERE external_id=?",
-                ("web:wuhan-incomplete",),
-            ).fetchone())
+            self.assertIsNone(
+                connection.execute(
+                    "SELECT id FROM real_merchants WHERE external_id=?",
+                    ("web:wuhan-incomplete",),
+                ).fetchone()
+            )
 
     def test_upsert_is_idempotent(self):
         with database.connect() as connection:

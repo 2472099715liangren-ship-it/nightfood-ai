@@ -1,12 +1,19 @@
 /* Page state and user actions. Rendering lives in decision-view.js. */
 import { request } from "./api-client.js";
 import {
+  loadConversation,
+  saveConversation,
+  clearConversation,
+} from "./session-store.js";
+import {
   escapeHtml as e,
   constraintsView,
   merchantCards,
   detailsView,
   choiceView,
   comparisonView,
+  preferencesEditor,
+  walkingRouteView,
 } from "./decision-view.js";
 
 const root = document.getElementById("app");
@@ -16,6 +23,16 @@ const state = {
   page: "decision",
   catalogStats: null,
   result: null,
+  preferences: {},
+  editingNeeds: false,
+  draft: "",
+  lastRequest: null,
+  failedRequest: false,
+  lookupMessage: "",
+  route: null,
+  routeBusy: false,
+  mapViews: {},
+  scrollPositions: {},
   history: [],
   saved: new Set(),
   compared: new Map(),
@@ -66,6 +83,9 @@ function renderDecision() {
       text: "你好，我是夜寻。\n今天想吃点什么？告诉我人数、预算和位置，一起挑一家合适的店。也可以直接查店名、菜单和价格。",
     },
   ];
+  const preferences = Object.keys(state.preferences).length
+    ? state.preferences
+    : null;
   root.innerHTML = `<section class="page-intro decision-intro"><div><span class="eyebrow">WUHAN · A LITTLE TASTE OF THE NIGHT</span>
     <h1>把今晚，交给一顿<span>好饭。</span></h1><p>聊聊想吃什么，让选择简单一点。<br>从武汉真实商家里，找到合你心意的那一家。</p></div>
     <div class="hero-art" aria-hidden="true"><svg viewBox="0 0 220 150" fill="none"><ellipse cx="111" cy="132" rx="77" ry="8" fill="#dce7d3"/><path d="M38 74h145c-4 38-30 56-72 56S43 112 38 74Z" fill="#e1ebd5" stroke="#779773" stroke-width="2"/><ellipse cx="111" cy="74" rx="73" ry="17" fill="#fafbf3" stroke="#779773" stroke-width="2"/><path d="M60 76c25-21 60-20 99-2M62 82c34-23 63-21 96-2M75 85c20-14 48-18 73-3" stroke="#b8ba83" stroke-width="3"/><path d="M127 62 167 17m-29 47 43-43" stroke="#7e8966" stroke-width="4" stroke-linecap="round"/><path d="M86 43c-13-13 11-15 1-29m23 35c-10-12 10-16 3-29" stroke="#a4b79a" stroke-width="2" stroke-linecap="round"/><path d="M47 61C24 57 19 43 21 32c20 1 31 11 26 29Z" fill="#ccddba"/><path d="m27 39 21 24" stroke="#8daa7d"/></svg><span>好好吃饭 · 慢慢选择</span></div></section>
@@ -84,17 +104,18 @@ function renderDecision() {
         .join("")}
         ${state.busy ? '<div class="thinking" role="status">夜寻正在整理你的需求 <span>···</span></div>' : ""}</div>
       <div class="quick-actions"><span>试着问问</span>${(result?.follow_up?.actions || ["武汉有哪些真实商家", "有哪些咖啡店", "查金贵源的菜单价格"]).map((message) => `<button type="button" data-message="${e(message)}" ${state.busy ? "disabled" : ""}>${e(message)} ↗</button>`).join("")}</div>
-      <form id="decision-form" class="chat-composer"><label class="sr-only" for="request-message">你的用餐需求</label><textarea id="request-message" name="message" maxlength="2000" required placeholder="比如：今晚七点，四个人在江汉路附近，总共三百元，想吃湖北菜…" ${state.busy ? "disabled" : ""}></textarea>
+      <form id="decision-form" class="chat-composer"><label class="sr-only" for="request-message">你的用餐需求</label><textarea id="request-message" name="message" maxlength="2000" required placeholder="比如：今晚七点，四个人在江汉路附近，总共三百元，想吃湖北菜…" ${state.busy ? "disabled" : ""}>${e(state.draft)}</textarea>
         <div class="composer-actions"><div><button type="button" data-location ${state.busy ? "disabled" : ""}>⌖ 我的位置</button><button type="button" data-reset ${state.busy ? "disabled" : ""}>↻ 重新聊</button></div><button type="submit" class="button-primary" ${state.busy ? "disabled" : ""}>${state.busy ? "正在寻找…" : "帮我找找 ↗"}</button></div></form>
+      ${state.failedRequest ? '<div class="request-error" role="alert">这次查询未完成，已保留输入与对话。<button type="button" data-retry-decision>重试查询</button></div>' : ""}
       ${result?.mode === "fallback" ? '<p class="source-note">AI 暂不可用，已切换本地条件解析。</p>' : ""}
-    </section><aside class="decision-aside"><section class="conditions" aria-label="已理解的条件"><span class="eyebrow">YOUR DINING NOTES</span><h2>今晚的用餐笔记</h2>${constraintsView(result?.constraints, result?.budget_per_person)}</section>
-      <section class="journey-note"><span class="eyebrow">一顿好饭，三步就好</span><ol><li><span>01</span><div><strong>聊聊你的想法</strong><small>人数、预算、位置与口味</small></div></li><li><span>02</span><div><strong>看看适合的店</strong><small>比较菜单、价格和真实位置</small></div></li><li><span>03</span><div><strong>选好，就出发</strong><small>打开地图，或联系门店</small></div></li></ol><button type="button" data-page="directory">去武汉地图逛逛 ↗</button></section></aside></div>
+    </section><aside class="decision-aside"><section class="conditions" aria-label="已理解的条件"><span class="eyebrow">YOUR DINING NOTES</span><h2>今晚的用餐笔记</h2><button type="button" class="edit-needs-button" data-edit-needs ${state.busy ? "disabled" : ""}>${state.editingNeeds ? "收起编辑" : "编辑条件 ✎"}</button>${state.editingNeeds ? preferencesEditor(state.preferences) : constraintsView(preferences, result?.budget_per_person)}</section>
+      <section class="journey-note" ${state.editingNeeds ? "hidden" : ""}><span class="eyebrow">一顿好饭，三步就好</span><ol><li><span>01</span><div><strong>聊聊你的想法</strong><small>人数、预算、位置与口味</small></div></li><li><span>02</span><div><strong>看看适合的店</strong><small>比较菜单、价格和真实位置</small></div></li><li><span>03</span><div><strong>选好，就出发</strong><small>打开地图，或联系门店</small></div></li></ol><button type="button" data-page="directory">去武汉地图逛逛 ↗</button></section></aside></div>
     ${catalogSummary()}
-    <section id="selected-place" ${state.selected ? "" : "hidden"}>${state.selected ? choiceView(state.selected) : ""}</section>
+    <section id="selected-place" ${state.selected ? "" : "hidden"}>${state.selected ? choiceView(state.selected) + `<div id="walking-route">${walkingRouteView(state.selected, state.route, state.routeBusy, state.preferences.location)}</div>` : ""}</section>
     ${
       result
         ? `<section class="candidate-section" aria-live="polite"><div class="section-heading"><div><span class="eyebrow">PICK YOUR FAVORITE</span><h2>${result.stage === "clarify" ? "再补充一点，就更合适了" : result.stage === "catalog" ? "在武汉，为你找到这些店" : "这几家，值得你看看"}</h2></div>${result.items.length ? '<button type="button" data-show-map>⌖ 在地图上比较</button>' : ""}</div>
-      <p class="reply-text muted">${e(result.reply)}</p>
+      ${state.failedRequest || state.busy ? '<p class="source-note">以下保留上一轮结果，本次查询尚未完成。</p>' : ""}<p class="reply-text muted">${e(result.reply)}</p>
       ${result.items.length ? `<div class="decision-grid">${merchantCards(result.items, state.saved, state.compared, true)}</div><div id="decision-map" class="decision-map" hidden role="region" aria-label="候选餐厅地图"></div>` : ""}
       ${
         Object.keys(result.excluded).length
@@ -113,52 +134,178 @@ function renderDecision() {
       event.preventDefault();
       sendMessage(new FormData(event.currentTarget).get("message"));
     });
+  document
+    .getElementById("request-message")
+    .addEventListener("input", (event) => {
+      state.draft = event.target.value;
+      saveConversation(state);
+    });
+  document
+    .getElementById("preferences-form")
+    ?.addEventListener("submit", applyPreferences);
   const log = document.getElementById("conversation-log");
   log.scrollTop = log.scrollHeight;
 }
 
 async function sendMessage(message, location) {
-  if (state.busy) return;
-  state.busy = true;
-  state.history.push({ role: "user", text: message });
-  renderDecision();
-  try {
-    const result = await request("/api/decision", {
+  if (!String(message || "").trim()) return;
+  return runDecision(
+    {
       message,
-      context: state.result?.constraints || {},
+      context: state.preferences,
       location,
       previous_ids: state.result?.items.map((item) => item.id) || [],
-      seen_ids: Array.from(state.seen),
+      seen_ids: [...state.seen].slice(-100),
       keep_ids:
         state.result?.items
           .filter((item) => item.kept)
           .map((item) => item.id) || [],
-    });
-    // Start a fresh rotation when the actual constraints change.
+    },
+    message,
+  );
+}
+
+async function runDecision(payload, historyText, appendUser = true) {
+  if (state.busy) return;
+  state.busy = true;
+  state.failedRequest = false;
+  state.lastRequest = payload;
+  state.draft = "";
+  if (appendUser) state.history.push({ role: "user", text: historyText });
+  saveConversation(state);
+  renderDecision();
+  try {
+    const result = await request("/api/decision", payload);
     if (
-      JSON.stringify(result.constraints) !==
-      JSON.stringify(state.result?.constraints)
+      JSON.stringify(result.constraints) !== JSON.stringify(state.preferences)
     )
       state.seen.clear();
     result.items.forEach((item) => state.seen.add(item.id));
     state.result = result;
+    state.preferences = result.constraints;
+    state.lookupMessage = result.stage === "catalog" ? payload.message : "";
     if (result.catalog_stats) state.catalogStats = result.catalog_stats;
     state.history.push({ role: "assistant", text: result.reply });
     state.selected = null;
+    state.route = null;
   } catch (error) {
-    state.history.push({ role: "assistant", text: error.message });
-    if (state.result)
-      state.result = {
-        ...state.result,
-        items: [],
-        reply: error.message,
-        eligible_total: 0,
-        excluded: {},
-      };
+    state.failedRequest = true;
     toast(error.message);
   } finally {
     state.busy = false;
+    saveConversation(state);
     if (state.page === "decision") renderDecision();
+  }
+}
+
+async function applyPreferences(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const data = new FormData(form);
+  const text = (key) => String(data.get(key) || "").trim();
+  const number = (key) => (text(key) ? Number(text(key)) : null);
+  const name = text("location_name");
+  const preferences = {
+    ...state.preferences,
+    party_size: number("party_size"),
+    budget: number("budget"),
+    budget_kind: text("budget_kind") || null,
+    location: name
+      ? name === state.preferences.location?.name
+        ? state.preferences.location
+        : { name }
+      : null,
+    arrival: text("arrival") ? `${text("arrival")}+08:00` : null,
+    arrival_date_inferred: false,
+    cuisine: text("cuisine"),
+    avoid: text("avoid")
+      .split(/[、,，;；]/)
+      .map((value) => value.trim())
+      .filter(Boolean),
+    radius_km: number("radius_km"),
+    priority: text("priority"),
+    provenance: {
+      ...state.preferences.provenance,
+      party_size: "user",
+      budget: "user",
+      location: "user",
+      cuisine: "user",
+    },
+  };
+  // Validate on the server before replacing the current results or hiding this editor.
+  const error = document.getElementById("preferences-error");
+  const submit = form.querySelector('button[type="submit"]');
+  submit.disabled = true;
+  state.busy = true;
+  try {
+    const payload = {
+      message: "按修改后的用餐条件重新筛选餐厅",
+      preferences,
+      intent: "plan",
+    };
+    const result = await request("/api/decision", payload);
+    state.preferences = result.constraints;
+    state.result = result;
+    state.lastRequest = payload;
+    state.lookupMessage = "";
+    state.failedRequest = false;
+    state.editingNeeds = false;
+    state.selected = null;
+    state.route = null;
+    state.seen = new Set(result.items.map((item) => item.id));
+    state.history.push(
+      { role: "user", text: "我修改了用餐条件，请按新的条件筛选。" },
+      { role: "assistant", text: result.reply },
+    );
+    saveConversation(state);
+    state.busy = false;
+    if (state.page === "decision") renderDecision();
+  } catch (failure) {
+    error.textContent = failure.message;
+    error.hidden = false;
+  } finally {
+    state.busy = false;
+    submit.disabled = false;
+  }
+}
+
+async function loadWalkingRoute() {
+  if (!state.selected || state.routeBusy) return;
+  const id = state.selected.id;
+  state.routeBusy = true;
+  renderRoute();
+  try {
+    const route = await request("/api/walking-route", {
+      merchant_id: id,
+      origin: state.preferences.location,
+    });
+    if (state.selected?.id !== id) return;
+    state.route = route;
+  } catch (error) {
+    if (state.selected?.id === id)
+      state.route = { status: "unavailable", notice: error.message };
+  } finally {
+    state.routeBusy = false;
+    renderRoute();
+  }
+}
+
+async function renderRoute() {
+  const container = document.getElementById("walking-route");
+  if (!container || !state.selected) return;
+  container.innerHTML = walkingRouteView(
+    state.selected,
+    state.route,
+    state.routeBusy,
+    state.preferences.location,
+  );
+  if (state.route?.status === "ready" && state.route.points.length) {
+    const map = document.getElementById("route-map");
+    map.hidden = false;
+    const route = state.route;
+    await window.NightFindWuhanMap?.draw(map, [state.selected]);
+    if (route !== state.route || !map.isConnected) return;
+    window.NightFindWuhanMap?.showRoute(route.points);
   }
 }
 
@@ -174,6 +321,9 @@ async function renderDirectory(version) {
     state.keyword = data.get("keyword");
     state.district = data.get("district");
     state.directoryPage = 0;
+    state.mapViews.directory = null;
+    window.NightFindWuhanMap?.dispose();
+    saveConversation(state);
     navigate("directory");
   });
   try {
@@ -206,7 +356,7 @@ async function renderDirectory(version) {
         const drawn = await window.NightFindWuhanMap?.draw(
           container,
           mapped.items,
-          { overview: true },
+          { overview: !state.keyword && !state.district },
         );
         if (version !== pageVersion) return;
         container.dataset.pins = drawn?.pins || 0;
@@ -214,7 +364,8 @@ async function renderDirectory(version) {
         if (state.focusMerchant != null) {
           window.NightFindWuhanMap?.focus(state.focusMerchant);
           state.focusMerchant = null;
-        }
+        } else
+          window.NightFindWuhanMap?.restoreView(state.mapViews[state.page]);
       } else status.textContent = "地图资料暂不可用，仍可浏览下方列表。";
     }
     if (version !== pageVersion) return;
@@ -236,17 +387,26 @@ async function renderDirectory(version) {
 }
 
 async function navigate(page) {
+  const focusing = state.focusMerchant != null;
+  state.scrollPositions[state.page] = window.scrollY;
+  const view = window.NightFindWuhanMap?.view();
+  if (view) state.mapViews[state.page] = view;
   state.page = page;
   pageVersion += 1;
   window.NightFindWuhanMap?.dispose();
   document
-    .querySelectorAll("[data-page]")
+    .querySelectorAll(".main-nav [data-page]")
     .forEach((button) =>
       button.classList.toggle("active", button.dataset.page === page),
     );
   if (page === "decision") renderDecision();
   renderTray();
   if (page !== "decision") await renderDirectory(pageVersion);
+  if (state.page === page && !focusing)
+    window.scrollTo({
+      top: state.scrollPositions[page] || 0,
+      behavior: "instant",
+    });
 }
 
 async function merchantById(id) {
@@ -267,6 +427,8 @@ async function merchantById(id) {
 
 async function choose(id) {
   state.selected = await merchantById(id);
+  state.route = null;
+  saveConversation(state);
   dialog.close();
   navigate("decision");
   document
@@ -274,13 +436,40 @@ async function choose(id) {
     .scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
+function updateCardActions() {
+  document.querySelectorAll("[data-save]").forEach((button) => {
+    const active = state.saved.has(Number(button.dataset.save));
+    button.setAttribute("aria-pressed", active);
+    const name =
+      button.closest("article")?.querySelector("h2")?.textContent || "门店";
+    button.setAttribute("aria-label", `${active ? "取消收藏" : "收藏"}${name}`);
+    button.textContent = active ? "♥" : "♡";
+  });
+  document.querySelectorAll("[data-compare]").forEach((button) => {
+    const active = state.compared.has(Number(button.dataset.compare));
+    button.setAttribute("aria-pressed", active);
+    button.textContent = active ? "✓ 已选对比" : "+ 加入对比";
+  });
+  renderTray();
+  saveConversation(state);
+}
+
 async function toggleSave(id) {
   const active = !state.saved.has(id);
   await request("/api/real-favorites", { merchant_id: id, active });
   if (active) state.saved.add(id);
   else state.saved.delete(id);
+  if (state.page === "saved" && !active) {
+    document.querySelector(`[data-card="${id}"]`)?.remove();
+    if (!document.querySelector("[data-card]"))
+      document.getElementById("directory-results").innerHTML = merchantCards(
+        [],
+        state.saved,
+        state.compared,
+      );
+  }
+  updateCardActions();
   toast(active ? "已保存到今晚清单" : "已取消收藏");
-  navigate(state.page);
 }
 
 async function toggleCompare(id) {
@@ -289,7 +478,7 @@ async function toggleCompare(id) {
     if (state.compared.size >= 3) return toast("最多比较三家，请先取消一项。");
     state.compared.set(id, await merchantById(id));
   }
-  navigate(state.page);
+  updateCardActions();
 }
 
 async function openComparison() {
@@ -341,9 +530,29 @@ document.addEventListener("click", async (event) => {
       state.history = [];
       state.seen.clear();
       state.selected = null;
+      state.preferences = {};
+      state.route = null;
+      state.lastRequest = null;
+      state.failedRequest = false;
+      state.lookupMessage = "";
+      state.draft = "";
+      state.editingNeeds = false;
+      clearConversation();
       return navigate("decision");
     }
     if (button.hasAttribute("data-location")) return locate();
+    if (button.hasAttribute("data-edit-needs")) {
+      state.editingNeeds = !state.editingNeeds;
+      renderDecision();
+      if (state.editingNeeds)
+        document
+          .getElementById("preferences-form")
+          .scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    if (button.hasAttribute("data-retry-decision") && state.lastRequest)
+      return await runDecision(state.lastRequest, "", false);
+    if (button.hasAttribute("data-load-route")) return await loadWalkingRoute();
     if (button.dataset.message)
       return await sendMessage(button.dataset.message);
     if (button.dataset.detail) {
@@ -363,12 +572,15 @@ document.addEventListener("click", async (event) => {
         (item) => item.id === Number(button.dataset.keep),
       );
       item.kept = !item.kept;
-      return renderDecision();
+      button.setAttribute("aria-pressed", item.kept);
+      button.textContent = item.kept ? "✓ 已保留" : "下轮保留";
+      return;
     }
     if (button.hasAttribute("data-open-compare")) return await openComparison();
     if (button.hasAttribute("data-clear-compare")) {
       state.compared.clear();
-      return navigate(state.page);
+      updateCardActions();
+      return;
     }
     if (button.dataset.directoryPage != null) {
       state.directoryPage = Number(button.dataset.directoryPage);
@@ -415,6 +627,32 @@ document.addEventListener("click", async (event) => {
 dialog.addEventListener("click", (event) => {
   if (event.target === dialog) dialog.close();
 });
+const restored = loadConversation();
+if (restored) {
+  state.history = (Array.isArray(restored.history) ? restored.history : [])
+    .filter(
+      (entry) =>
+        entry &&
+        ["user", "assistant"].includes(entry.role) &&
+        typeof entry.text === "string",
+    )
+    .slice(-30);
+  state.preferences =
+    restored.preferences && typeof restored.preferences === "object"
+      ? restored.preferences
+      : {};
+  state.draft =
+    typeof restored.draft === "string" ? restored.draft.slice(0, 2000) : "";
+  state.keyword =
+    typeof restored.keyword === "string" ? restored.keyword.slice(0, 80) : "";
+  state.district =
+    typeof restored.district === "string" ? restored.district : "";
+  state.lookupMessage = restored.lookupMessage || "";
+  state.lastRequest = restored.lastRequest;
+  state.failedRequest = !!restored.failedRequest;
+}
+state.busy = true;
+renderDecision();
 try {
   const [response, coverage] = await Promise.all([
     request("/api/real-favorites"),
@@ -422,10 +660,38 @@ try {
   ]);
   state.saved = new Set(response.items.map((item) => item.id));
   state.catalogStats = coverage;
+  if (
+    restored &&
+    state.history.length &&
+    Object.keys(state.preferences).length &&
+    !state.failedRequest
+  ) {
+    state.result = await request("/api/decision", {
+      preferences: state.preferences,
+      message: state.lookupMessage || "按已保存的条件继续选店",
+      intent: restored.stage === "catalog" ? "lookup" : "plan",
+    });
+    state.preferences = state.result.constraints;
+    if (Number.isInteger(restored.selectedId))
+      state.selected = await merchantById(restored.selectedId).catch(
+        () => null,
+      );
+    for (const id of (Array.isArray(restored.comparedIds)
+      ? restored.comparedIds
+      : []
+    ).slice(0, 3)) {
+      if (!Number.isInteger(id)) continue;
+      const item = await merchantById(id).catch(() => null);
+      if (item) state.compared.set(id, item);
+    }
+  }
 } catch (error) {
+  state.failedRequest = !!state.lastRequest;
   toast(error.message);
 }
-navigate("decision");
+state.busy = false;
+if (state.page === "decision") renderDecision();
+renderTray();
 
 // A blocked external image should leave the designed cover, not a broken-image icon.
 document.addEventListener(

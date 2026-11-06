@@ -12,12 +12,30 @@ try {
 }
 
 export async function request(path, body) {
-  const response = await fetch(path, {
-    method: body === undefined ? "GET" : "POST",
-    headers: { "X-Session": sessionId, "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || "请求失败，请稍后重试。");
-  return data;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await fetch(path, {
+      method: body === undefined ? "GET" : "POST",
+      signal: controller.signal,
+      headers: { "X-Session": sessionId, "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    let data;
+    try {
+      data = await response.json();
+    } catch {
+      throw new Error("服务响应暂时无法读取，请重试。");
+    }
+    if (!response.ok) throw new Error(data.error || "请求失败，请稍后重试。");
+    return data;
+  } catch (error) {
+    if (error.name === "AbortError")
+      throw new Error("查询超时，已保留用餐需求，可以重试。");
+    if (error instanceof TypeError)
+      throw new Error("连接失败，请确认夜寻仍在运行后重试。");
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }

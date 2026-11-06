@@ -224,3 +224,42 @@ export function comparisonView(items) {
     ${rows.map(([label, render]) => `<tr><th>${label}</th>${items.map((item) => `<td>${e(render(item))}</td>`).join("")}</tr>`).join("")}
     <tr><th>作出选择</th>${items.map((item) => `<td><button type="button" class="button-primary" data-choose="${item.id}">就选这家</button></td>`).join("")}</tr></tbody></table></div>`;
 }
+
+export function preferencesEditor(preferences = {}) {
+  return `<form id="preferences-form" class="preferences-form">
+    <label>用餐人数<input name="party_size" type="number" min="1" max="50" step="1" value="${e(preferences.party_size)}" placeholder="几个人"></label>
+    <label>预算金额<input name="budget" type="number" min="1" max="100000" value="${e(preferences.budget)}" placeholder="多少元"></label>
+    <label>预算单位<select name="budget_kind"><option value="">请选择</option><option value="per_person" ${preferences.budget_kind === "per_person" ? "selected" : ""}>每人预算</option><option value="total" ${preferences.budget_kind === "total" ? "selected" : ""}>全部人的总预算</option></select></label>
+    <label>出发位置<input name="location_name" value="${e(preferences.location?.name)}" placeholder="江汉路、光谷或武汉行政区"></label>
+    <label>到店时间（北京时间）<input name="arrival" type="datetime-local" value="${e(preferences.arrival?.slice(0, 16))}"></label>
+    <label>口味偏好<input name="cuisine" maxlength="40" value="${e(preferences.cuisine)}" placeholder="例如湖北菜，留空则不限"></label>
+    <label>忌口 / 过敏<input name="avoid" maxlength="400" value="${e((preferences.avoid || []).join("、"))}" placeholder="例如花生、海鲜"></label>
+    <label>最大直线距离（km）<input name="radius_km" type="number" step="0.1" min="0.1" max="100" value="${e(preferences.radius_km)}" placeholder="留空则不限"></label>
+    <label>更看重什么<select name="priority">${[
+      ["balanced", "综合考虑"],
+      ["distance", "距离更近"],
+      ["budget", "价格更低"],
+    ]
+      .map(
+        ([value, label]) =>
+          `<option value="${value}" ${preferences.priority === value ? "selected" : ""}>${label}</option>`,
+      )
+      .join("")}</select></label>
+    <p id="preferences-error" class="form-error" role="alert" hidden></p>
+    <div class="card-actions"><button class="button-primary" type="submit">保存并重新筛选</button><button type="button" data-edit-needs>取消</button></div>
+    <p class="source-note">修改条件会保留对话。已识别的商圈中心用于直线估算，不代表精确出发地址。</p></form>`;
+}
+
+export function walkingRouteView(item, route, busy, origin) {
+  if (!hasCoordinates(item))
+    return '<p class="source-note">该门店尚无可靠坐标，可按店名与地址在外部地图查找。</p>';
+  if (!origin || origin.latitude == null || origin.longitude == null)
+    return '<div class="route-empty"><p>设置出发位置，就能继续查看步行路线。</p><button type="button" data-edit-needs>设置出发位置</button></div>';
+  const actions = `<div class="card-actions"><button type="button" data-load-route ${busy ? "disabled" : ""}>${busy ? "正在查询…" : route ? "重新查询路线" : "查询步行路线"}</button>${route?.navigation_url ? externalLink(route.navigation_url, "在高德继续导航 ↗", "button-secondary") : ""}</div>`;
+  if (!route || route.status !== "ready")
+    return `<div class="route-empty"><p>${e(route?.notice || `从${origin.name}出发，查询实际步行距离与预计用时。`)}</p>${actions}</div>`;
+  return `<section class="walking-route"><div class="route-facts"><strong>${route.distance_m >= 1000 ? `${(route.distance_m / 1000).toFixed(1)} km` : `${route.distance_m} m`}</strong><span>预计步行 ${Math.max(1, Math.ceil(route.duration_seconds / 60))} 分钟</span></div>
+    <p class="source-note">${e(route.source_name)} · ${e(route.origin_name)}出发。${e(route.origin_note)} 路线与时间为服务估计，以实际道路情况为准。</p>
+    ${actions}${route.steps?.length ? `<details><summary>查看步行指引</summary><ol>${route.steps.map((step) => `<li>${e(step)}</li>`).join("")}</ol></details>` : ""}
+    <div id="route-map" class="decision-map" role="region" aria-label="选定餐厅步行路线地图" hidden></div></section>`;
+}
