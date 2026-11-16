@@ -116,6 +116,20 @@ class PreferenceTests(unittest.TestCase):
         self.assertIsNone(context["arrival"])
         self.assertIn("什么时候", next_question(context, NOW)["question"])
 
+    def test_preference_followups_do_not_become_one_oclock(self):
+        original, _ = parse_request(
+            "明天晚上七点，两个人，江汉路，总预算400元", now=NOW
+        )
+        for message, priority in (("便宜一点", "budget"), ("找近一点", "distance")):
+            with self.subTest(message=message):
+                context, _ = parse_request(message, original, now=NOW)
+                self.assertEqual(context["arrival"], original["arrival"])
+                self.assertEqual(context["budget"], original["budget"])
+                self.assertEqual(context["priority"], priority)
+                self.assertIsNone(next_question(context, NOW))
+        context, _ = parse_request("找近一点，改到明天晚上八点", original, now=NOW)
+        self.assertEqual(context["arrival"], "2026-11-05T20:00+08:00")
+
     def test_device_location_is_wuhan_bounded_and_labelled(self):
         location = {"name": "我的位置", "latitude": 30.586, "longitude": 114.291}
         context, _ = parse_request("当前位置", location=location, now=NOW)

@@ -320,6 +320,15 @@
 .candidate-section {
   margin-top: 32px;
 }
+.recommendation-summary {
+  padding: 18px 22px;
+  border: 1px solid var(--green-line);
+  border-radius: 18px;
+  background: var(--surface);
+}
+.recommendation-summary .condition-tags {
+  margin-top: 0;
+}
 
 /* Merchant cards expose useful facts; provenance and longer reminders can expand. */
 .decision-grid {

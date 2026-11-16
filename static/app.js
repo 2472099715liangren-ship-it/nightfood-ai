@@ -9,6 +9,7 @@ import {
   escapeHtml as e,
   constraintsView,
   merchantCards,
+  candidateResultsView,
   detailsView,
   choiceView,
   comparisonView,
@@ -57,6 +58,13 @@ function toast(message) {
   toastTimer = setTimeout(() => element.classList.remove("visible"), 3500);
 }
 
+function clearToast() {
+  clearTimeout(toastTimer);
+  const element = document.getElementById("toast");
+  element.classList.remove("visible");
+  element.textContent = "";
+}
+
 function renderTray() {
   const tray = document.getElementById("compare-tray");
   tray.hidden = !state.compared.size;
@@ -71,6 +79,38 @@ function catalogSummary() {
     <span><strong>${stats.public_total}</strong> 家真实来源商家</span>
     <span><strong>${stats.mapped_total}</strong> 个地图点位</span>
     <details><summary>资料覆盖说明 ↗</summary><p>近五年来源资料。已收录 ${stats.priced_merchant_total} 家门店的 ${stats.priced_menu_items} 条菜品单价，其中 ${stats.priced_mapped_total} 家有坐标。未收录的价格、电话和营业时间会在资料卡中注明；记录不代表实时营业。</p></details></div>`;
+}
+
+function hasRecommendations() {
+  return state.result?.stage === "candidates" && state.result.items.length > 0;
+}
+
+function selectedPlaceView() {
+  return `<section id="selected-place" ${state.selected ? "" : "hidden"}>${state.selected ? choiceView(state.selected) + `<div id="walking-route">${walkingRouteView(state.selected, state.route, state.routeBusy, state.preferences.location)}</div>` : ""}</section>`;
+}
+
+function renderRecommendations() {
+  window.NightFindWuhanMap?.dispose();
+  const result = hasRecommendations() ? state.result : null;
+  root.innerHTML = `<section class="page-intro"><span class="eyebrow">YOUR RESTAURANT PICKS</span>
+    <h1 id="recommendations-title" tabindex="-1">本轮推荐商家</h1>
+    <p>${result ? `已为你找到 ${result.items.length} 家候选商家，可以查看菜单、比较位置，再决定去哪。` : "先说说你的用餐打算，夜寻会在这里展示本轮推荐。"}</p>
+    <div class="card-actions"><button type="button" data-page="decision">← 返回对话，调整需求</button></div></section>
+    ${result ? `<section class="recommendation-summary" aria-label="本轮用餐条件">${constraintsView(result.constraints, result.budget_per_person)}</section>${selectedPlaceView()}${candidateResultsView(result, state.saved, state.compared)}` : '<div class="empty-state">还没有可展示的推荐，补充用餐条件后再试试。</div>'}`;
+}
+
+async function showDecisionResult(succeeded, requestVersion) {
+  // A delayed response must not pull the visitor away from another page.
+  if (state.page === "decision") {
+    if (succeeded && requestVersion === pageVersion && hasRecommendations()) {
+      toast(`推荐成功，已为你找到 ${state.result.items.length} 家候选商家`);
+      state.scrollPositions.recommendations = 0;
+      await navigate("recommendations");
+      document
+        .getElementById("recommendations-title")
+        ?.focus({ preventScroll: true });
+    } else renderDecision();
+  } else if (state.page === "recommendations") renderRecommendations();
 }
 
 function renderDecision() {
@@ -111,23 +151,8 @@ function renderDecision() {
     </section><aside class="decision-aside"><section class="conditions" aria-label="已理解的条件"><span class="eyebrow">YOUR DINING NOTES</span><h2>今晚的用餐笔记</h2><button type="button" class="edit-needs-button" data-edit-needs ${state.busy ? "disabled" : ""}>${state.editingNeeds ? "收起编辑" : "编辑条件 ✎"}</button>${state.editingNeeds ? preferencesEditor(state.preferences) : constraintsView(preferences, result?.budget_per_person)}</section>
       <section class="journey-note" ${state.editingNeeds ? "hidden" : ""}><span class="eyebrow">一顿好饭，三步就好</span><ol><li><span>01</span><div><strong>聊聊你的想法</strong><small>人数、预算、位置与口味</small></div></li><li><span>02</span><div><strong>看看适合的店</strong><small>比较菜单、价格和真实位置</small></div></li><li><span>03</span><div><strong>选好，就出发</strong><small>打开地图，或联系门店</small></div></li></ol><button type="button" data-page="directory">去武汉地图逛逛 ↗</button></section></aside></div>
     ${catalogSummary()}
-    <section id="selected-place" ${state.selected ? "" : "hidden"}>${state.selected ? choiceView(state.selected) + `<div id="walking-route">${walkingRouteView(state.selected, state.route, state.routeBusy, state.preferences.location)}</div>` : ""}</section>
-    ${
-      result
-        ? `<section class="candidate-section" aria-live="polite"><div class="section-heading"><div><span class="eyebrow">PICK YOUR FAVORITE</span><h2>${result.stage === "clarify" ? "再补充一点，就更合适了" : result.stage === "catalog" ? "在武汉，为你找到这些店" : "这几家，值得你看看"}</h2></div>${result.items.length ? '<button type="button" data-show-map>⌖ 在地图上比较</button>' : ""}</div>
-      ${state.failedRequest || state.busy ? '<p class="source-note">以下保留上一轮结果，本次查询尚未完成。</p>' : ""}<p class="reply-text muted">${e(result.reply)}</p>
-      ${result.items.length ? `<div class="decision-grid">${merchantCards(result.items, state.saved, state.compared, true)}</div><div id="decision-map" class="decision-map" hidden role="region" aria-label="候选餐厅地图"></div>` : ""}
-      ${
-        Object.keys(result.excluded).length
-          ? `<details class="filter-explanation"><summary>查看其他门店的筛选原因</summary><ul>${Object.entries(
-              result.excluded,
-            )
-              .map(([reason, count]) => `<li>${e(reason)}：${count} 家</li>`)
-              .join("")}</ul></details>`
-          : ""
-      }</section>`
-        : ""
-    }`;
+    ${selectedPlaceView()}
+    ${candidateResultsView(result, state.saved, state.compared, state.failedRequest || state.busy)}`;
   document
     .getElementById("decision-form")
     .addEventListener("submit", (event) => {
@@ -167,6 +192,9 @@ async function sendMessage(message, location) {
 
 async function runDecision(payload, historyText, appendUser = true) {
   if (state.busy) return;
+  clearToast();
+  const requestVersion = pageVersion;
+  let succeeded = false;
   state.busy = true;
   state.failedRequest = false;
   state.lastRequest = payload;
@@ -188,13 +216,14 @@ async function runDecision(payload, historyText, appendUser = true) {
     state.history.push({ role: "assistant", text: result.reply });
     state.selected = null;
     state.route = null;
+    succeeded = true;
   } catch (error) {
     state.failedRequest = true;
     toast(error.message);
   } finally {
     state.busy = false;
     saveConversation(state);
-    if (state.page === "decision") renderDecision();
+    await showDecisionResult(succeeded, requestVersion);
   }
 }
 
@@ -235,6 +264,8 @@ async function applyPreferences(event) {
   // Validate on the server before replacing the current results or hiding this editor.
   const error = document.getElementById("preferences-error");
   const submit = form.querySelector('button[type="submit"]');
+  const requestVersion = pageVersion;
+  clearToast();
   submit.disabled = true;
   state.busy = true;
   try {
@@ -259,7 +290,7 @@ async function applyPreferences(event) {
     );
     saveConversation(state);
     state.busy = false;
-    if (state.page === "decision") renderDecision();
+    await showDecisionResult(true, requestVersion);
   } catch (failure) {
     error.textContent = failure.message;
     error.hidden = false;
@@ -400,8 +431,12 @@ async function navigate(page) {
       button.classList.toggle("active", button.dataset.page === page),
     );
   if (page === "decision") renderDecision();
+  else if (page === "recommendations") renderRecommendations();
   renderTray();
-  if (page !== "decision") await renderDirectory(pageVersion);
+  if (!state.busy && (state.history.length || state.draft))
+    saveConversation(state);
+  if (page === "directory" || page === "saved")
+    await renderDirectory(pageVersion);
   if (state.page === page && !focusing)
     window.scrollTo({
       top: state.scrollPositions[page] || 0,
@@ -430,7 +465,11 @@ async function choose(id) {
   state.route = null;
   saveConversation(state);
   dialog.close();
-  navigate("decision");
+  await navigate(
+    state.page === "recommendations" && hasRecommendations()
+      ? "recommendations"
+      : "decision",
+  );
   document
     .getElementById("selected-place")
     .scrollIntoView({ behavior: "smooth", block: "center" });
@@ -543,7 +582,8 @@ document.addEventListener("click", async (event) => {
     if (button.hasAttribute("data-location")) return locate();
     if (button.hasAttribute("data-edit-needs")) {
       state.editingNeeds = !state.editingNeeds;
-      renderDecision();
+      if (state.page !== "decision") await navigate("decision");
+      else renderDecision();
       if (state.editingNeeds)
         document
           .getElementById("preferences-form")
@@ -651,6 +691,7 @@ if (restored) {
   state.lastRequest = restored.lastRequest;
   state.failedRequest = !!restored.failedRequest;
 }
+const restorePageVersion = pageVersion;
 state.busy = true;
 renderDecision();
 try {
@@ -690,7 +731,16 @@ try {
   toast(error.message);
 }
 state.busy = false;
-if (state.page === "decision") renderDecision();
+if (state.page === "decision") {
+  if (
+    restorePageVersion === pageVersion &&
+    restored?.page === "recommendations" &&
+    !state.failedRequest &&
+    hasRecommendations()
+  )
+    await navigate("recommendations");
+  else renderDecision();
+}
 renderTray();
 
 // A blocked external image should leave the designed cover, not a broken-image icon.

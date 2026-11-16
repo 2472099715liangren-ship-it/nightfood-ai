@@ -263,3 +263,19 @@ export function walkingRouteView(item, route, busy, origin) {
     ${actions}${route.steps?.length ? `<details><summary>查看步行指引</summary><ol>${route.steps.map((step) => `<li>${e(step)}</li>`).join("")}</ol></details>` : ""}
     <div id="route-map" class="decision-map" role="region" aria-label="选定餐厅步行路线地图" hidden></div></section>`;
 }
+
+export function candidateResultsView(result, saved, compared, stale = false) {
+  if (!result) return "";
+  return `<section class="candidate-section" aria-live="polite"><div class="section-heading"><div><span class="eyebrow">PICK YOUR FAVORITE</span><h2>${result.stage === "clarify" ? "再补充一点，就更合适了" : result.stage === "catalog" ? "在武汉，为你找到这些店" : "这几家，值得你看看"}</h2></div>${result.items.length ? '<button type="button" data-show-map>⌖ 在地图上比较</button>' : ""}</div>
+      ${stale ? '<p class="source-note">以下保留上一轮结果，本次查询尚未完成。</p>' : ""}<p class="reply-text muted">${e(result.reply)}</p>
+      ${result.items.length ? `<div class="decision-grid">${merchantCards(result.items, saved, compared, true)}</div><div id="decision-map" class="decision-map" hidden role="region" aria-label="候选餐厅地图"></div>` : ""}
+      ${
+        Object.keys(result.excluded).length
+          ? `<details class="filter-explanation"><summary>查看其他门店的筛选原因</summary><ul>${Object.entries(
+              result.excluded,
+            )
+              .map(([reason, count]) => `<li>${e(reason)}：${count} 家</li>`)
+              .join("")}</ul></details>`
+          : ""
+      }</section>`;
+}

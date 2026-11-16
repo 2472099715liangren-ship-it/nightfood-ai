@@ -352,6 +352,21 @@ figcaption {
     display: none;
   }
 }
+@media (max-width: 800px) {
+  .site-header {
+    flex-wrap: wrap;
+    padding: 20px 0 16px;
+    gap: 16px;
+  }
+  .main-nav {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .nav-link {
+    flex: 1;
+    padding: 8px 6px;
+  }
+}
 @media (max-width: 650px) {
   .site-header {
     width: calc(100% - 32px);

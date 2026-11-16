@@ -305,9 +305,11 @@ def parse_request(message, context=None, location=None, now=None):
         # A newly mentioned unknown place must not silently reuse the old origin.
         changes["location"] = None
     unsupported_day = re.search(r"下周|本周|周末|周[1-7]|星期[1-7]", text)
+    # Preference adjustments such as "便宜一点" are not one o'clock.
+    time_text = re.sub(r"(?:便宜|近)1点", "", text)
     hour = re.search(
         r"(凌晨|上午|中午|下午|傍晚|晚上|今晚)?\s*(\d{1,2})(?:[:：](\d{2})|点(半|\d{1,2}分?)?)",
-        text,
+        time_text,
     )
     if unsupported_day and "arrival" not in changes:
         changes["arrival"] = None

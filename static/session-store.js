@@ -25,6 +25,7 @@ export function saveConversation(state) {
       JSON.stringify({
         version: 1,
         savedAt: Date.now(),
+        page: state.page,
         history: state.history.slice(-30),
         preferences: state.preferences,
         stage: state.result?.stage,

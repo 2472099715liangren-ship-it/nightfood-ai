@@ -19,6 +19,7 @@ function memoryStorage() {
 test("persists preferences, draft and IDs without caching merchant prices", () => {
   memoryStorage();
   saveConversation({
+    page: "recommendations",
     history: [{ role: "user", text: "江汉路两个人" }],
     preferences: { party_size: 2 },
     selected: { id: 7, price_per_person: 999 },
@@ -29,6 +30,7 @@ test("persists preferences, draft and IDs without caching merchant prices", () =
     failedRequest: false,
   });
   const saved = loadConversation();
+  assert.equal(saved.page, "recommendations");
   assert.equal(saved.preferences.party_size, 2);
   assert.equal(saved.selectedId, 7);
   assert.deepEqual(saved.comparedIds, [7]);
