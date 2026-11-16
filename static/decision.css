@@ -4,11 +4,21 @@
   justify-content: space-between;
   align-items: center;
   gap: 24px;
+  margin-bottom: 24px;
+}
+.ai-intro-label {
+  padding: 5px 11px;
+  border: 1px solid #cdddbf;
+  border-radius: 20px;
+  background: #e8f1dc;
+  color: var(--green-dark);
+  letter-spacing: 1px;
 }
 .hero-art {
-  width: 200px;
+  width: 145px;
   flex-shrink: 0;
-  margin-right: 35px;
+  margin-right: 20px;
+  opacity: 0.75;
   text-align: center;
 }
 .hero-art svg {
@@ -22,20 +32,22 @@
 }
 .decision-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 2.15fr) minmax(250px, 1fr);
+  grid-template-columns: minmax(0, 3fr) minmax(220px, 1fr);
   gap: 22px;
   align-items: start;
 }
 .decision-input {
-  border: 1px solid var(--green-line);
+  border: 1px solid #b9cfa9;
+  border-top: 3px solid #759865;
   border-radius: 24px;
   background: var(--surface);
-  box-shadow: var(--shadow);
-  padding: 24px;
+  box-shadow: 0 16px 48px #3f632b12;
+  padding: 26px;
   min-width: 0;
 }
 .chat-heading {
-  display: flex;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   padding-bottom: 18px;
@@ -51,22 +63,25 @@
   font-family: serif;
 }
 .helper-avatar {
-  width: 42px;
-  height: 42px;
+  width: 48px;
+  height: 48px;
   border-radius: 14px;
-  font-size: 20px;
+  font:
+    650 19px system-ui,
+    sans-serif;
+  background: var(--green-dark);
+  color: #fbfff5;
 }
 .chat-heading h2 {
-  font-size: 16px;
+  font-size: 21px;
   margin: 0 0 2px;
 }
 .chat-heading p {
   margin: 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 .mode-pill {
-  margin-left: auto;
   font-size: 10px;
   background: #f0f5e9;
   color: #708561;
@@ -78,8 +93,8 @@
   display: flex;
   flex-direction: column;
   gap: 18px;
-  min-height: 210px;
-  max-height: 320px;
+  min-height: 180px;
+  max-height: 360px;
   overflow-y: auto;
   padding: 24px 0 20px;
   scrollbar-width: thin;
@@ -100,7 +115,7 @@
   max-width: 87%;
   border-radius: 3px 16px 16px;
   background: #f0f4e9;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.9;
   white-space: pre-line;
   overflow-wrap: anywhere;
@@ -127,33 +142,58 @@
   margin-bottom: 16px;
 }
 .quick-actions > span {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
 }
 .quick-actions button {
-  padding: 5px 9px;
-  font-size: 10px;
+  padding: 7px 11px;
+  font-size: 12px;
   border-radius: 20px;
   background: #fafbf5;
 }
 .chat-composer {
-  padding: 13px;
-  border: 1px solid #d5e0cb;
-  background: #fafcf6;
+  padding: 16px;
+  border: 1px solid #b9cfa9;
+  background: #f5f9ef;
   border-radius: 16px;
+}
+.chat-composer:focus-within {
+  border-color: #709762;
+  box-shadow: 0 0 0 4px #70976214;
+}
+.composer-heading {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-bottom: 9px;
+}
+.composer-heading label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--green-dark);
+}
+.composer-heading span {
+  font-size: 10px;
+  color: var(--muted);
+}
+.chat-footnote {
+  font-size: 10px;
+  color: var(--muted);
+  margin: 12px 0 0;
 }
 #request-message {
   display: block;
   width: 100%;
-  height: 78px;
-  min-height: 65px;
+  height: 100px;
+  min-height: 80px;
   max-height: 250px;
   resize: vertical;
   padding: 2px 2px 10px;
   border: 0;
   background: transparent;
   color: var(--ink);
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1.8;
 }
 #request-message::placeholder {
@@ -179,6 +219,10 @@
   color: var(--muted);
   font-size: 11px;
 }
+.composer-actions > .button-primary {
+  padding: 11px 21px;
+  font-size: 14px;
+}
 .decision-aside {
   display: grid;
   grid-template-rows: auto 1fr;
@@ -188,11 +232,11 @@
   padding: 23px;
   border: 1px solid #d6e1cb;
   border-radius: 22px;
-  background: #eaf1df99;
+  background: #f5f8ef;
 }
 .conditions h2 {
   margin: 6px 0 14px;
-  font-size: 17px;
+  font-size: 15px;
 }
 .needs-empty {
   display: flex;
@@ -226,6 +270,11 @@
   border: 1px solid var(--green-line);
   border-radius: 22px;
   background: #fffefa99;
+}
+.journey-note summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
 }
 .journey-note ol {
   list-style: none;
@@ -871,7 +920,7 @@ th {
 }
 @media (max-width: 950px) {
   .decision-workspace {
-    grid-template-columns: minmax(0, 1.8fr) minmax(220px, 1fr);
+    grid-template-columns: minmax(0, 2.6fr) 220px;
     gap: 16px;
   }
   .decision-input,
@@ -888,7 +937,30 @@ th {
   }
   .hero-art {
     margin-right: 0;
-    width: 160px;
+    width: 125px;
+  }
+}
+/* Keep the composer in view on shorter laptop screens. */
+@media (min-width: 701px) and (max-height: 800px) {
+  .decision-intro {
+    margin-bottom: 18px;
+  }
+  .decision-intro h1 {
+    font-size: 34px;
+    margin: 8px 0;
+  }
+  .hero-art {
+    width: 120px;
+  }
+  .decision-input {
+    padding: 18px;
+  }
+  .chat-messages {
+    min-height: 120px;
+    padding: 18px 0;
+  }
+  #request-message {
+    height: 85px;
   }
 }
 @media (max-width: 700px) {
@@ -938,6 +1010,32 @@ th {
   }
 }
 @media (max-width: 480px) {
+  .decision-intro .ai-intro-label {
+    font-size: 9px;
+  }
+  .decision-intro h1 {
+    font-size: 27px;
+    line-height: 1.3;
+    letter-spacing: 0;
+  }
+  .decision-intro p {
+    font-size: 12px;
+  }
+  .chat-heading {
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 5px 10px;
+    padding-bottom: 14px;
+  }
+  .helper-avatar {
+    width: 42px;
+    height: 42px;
+  }
+  .chat-heading h2 {
+    font-size: 19px;
+  }
+  .chat-heading p {
+    font-size: 10px;
+  }
   .decision-grid {
     grid-template-columns: 1fr;
   }
@@ -957,12 +1055,15 @@ th {
     font-size: 11px;
   }
   .mode-pill {
-    max-width: 106px;
+    grid-column: 2;
+    justify-self: start;
+    max-width: none;
     white-space: normal;
-    text-align: center;
+    text-align: left;
   }
   .chat-messages {
-    min-height: 200px;
+    min-height: 120px;
+    padding: 18px 0;
   }
   .message-content {
     max-width: 86%;
@@ -975,6 +1076,21 @@ th {
   .composer-actions > .button-primary {
     padding: 8px 10px;
     font-size: 12px;
+  }
+  .chat-composer {
+    padding: 13px;
+  }
+  #request-message {
+    height: 85px;
+    font-size: 14px;
+  }
+  .quick-actions {
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .quick-actions button {
+    font-size: 10px;
+    padding: 5px 8px;
   }
   .decision-aside {
     grid-template-columns: 1fr;
@@ -1011,6 +1127,30 @@ th {
     padding: 10px;
     gap: 10px;
     justify-content: center;
+  }
+}
+
+@media (max-width: 360px) {
+  .decision-intro .ai-intro-label,
+  .decision-intro p,
+  .chat-heading p,
+  .quick-actions > span {
+    display: none;
+  }
+  .decision-intro {
+    margin-bottom: 18px;
+  }
+  .decision-intro h1 {
+    margin: 8px 0;
+    font-size: 25px;
+  }
+  .chat-heading {
+    row-gap: 2px;
+    padding-bottom: 10px;
+  }
+  .message-content {
+    font-size: 13px;
+    line-height: 1.75;
   }
 }
 

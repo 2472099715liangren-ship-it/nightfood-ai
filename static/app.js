@@ -120,17 +120,27 @@ function renderDecision() {
   const greeting = [
     {
       role: "assistant",
-      text: "你好，我是夜寻。\n今天想吃点什么？告诉我人数、预算和位置，一起挑一家合适的店。也可以直接查店名、菜单和价格。",
+      text: "你好，我是夜寻。\n告诉我人数、预算和位置，我来帮你挑一家合适的餐厅。",
     },
   ];
   const preferences = Object.keys(state.preferences).length
     ? state.preferences
     : null;
-  root.innerHTML = `<section class="page-intro decision-intro"><div><span class="eyebrow">WUHAN · A LITTLE TASTE OF THE NIGHT</span>
-    <h1>把今晚，交给一顿<span>好饭。</span></h1><p>聊聊想吃什么，让选择简单一点。<br>从武汉真实商家里，找到合你心意的那一家。</p></div>
+  const suggestions = result?.follow_up?.actions?.length
+    ? result.follow_up.actions.map((message) => ({ label: message, message }))
+    : [
+        {
+          label: "安排双人晚餐",
+          message: "明天晚上七点，两个人在江汉路附近，总预算200元，想吃湖北菜",
+        },
+        { label: "找一家咖啡店", message: "江汉路附近有哪些咖啡店" },
+        { label: "查菜单与价格", message: "查金贵源的菜单价格" },
+      ];
+  root.innerHTML = `<section class="page-intro decision-intro"><div><span class="eyebrow ai-intro-label">✦ 夜寻 AI · 武汉餐饮助手</span>
+    <h1>和 AI 聊聊，<span>今晚吃什么？</span></h1><p>把人数、预算和口味告诉夜寻，一起找到合适的那家店。</p></div>
     <div class="hero-art" aria-hidden="true"><svg viewBox="0 0 220 150" fill="none"><ellipse cx="111" cy="132" rx="77" ry="8" fill="#dce7d3"/><path d="M38 74h145c-4 38-30 56-72 56S43 112 38 74Z" fill="#e1ebd5" stroke="#779773" stroke-width="2"/><ellipse cx="111" cy="74" rx="73" ry="17" fill="#fafbf3" stroke="#779773" stroke-width="2"/><path d="M60 76c25-21 60-20 99-2M62 82c34-23 63-21 96-2M75 85c20-14 48-18 73-3" stroke="#b8ba83" stroke-width="3"/><path d="M127 62 167 17m-29 47 43-43" stroke="#7e8966" stroke-width="4" stroke-linecap="round"/><path d="M86 43c-13-13 11-15 1-29m23 35c-10-12 10-16 3-29" stroke="#a4b79a" stroke-width="2" stroke-linecap="round"/><path d="M47 61C24 57 19 43 21 32c20 1 31 11 26 29Z" fill="#ccddba"/><path d="m27 39 21 24" stroke="#8daa7d"/></svg><span>好好吃饭 · 慢慢选择</span></div></section>
     <div class="decision-workspace"><section class="decision-input" aria-label="AI 对话区域">
-      <header class="chat-heading"><span class="helper-avatar" aria-hidden="true">夜</span><div><h2>和夜寻聊聊</h2><p>你的武汉餐饮小向导</p></div><span class="mode-pill">${mode} · 真实资料库</span></header>
+      <header class="chat-heading"><span class="helper-avatar" aria-hidden="true">AI</span><div><h2>夜寻 AI 对话</h2><p>从你的想法开始，帮你一步步选好餐厅。</p></div><span class="mode-pill">${mode} · 真实资料库</span></header>
       <div id="conversation-log" class="chat-messages" role="log" aria-label="与夜寻的对话" aria-live="polite">${(state
         .history.length
         ? state.history
@@ -143,13 +153,14 @@ function renderDecision() {
         )
         .join("")}
         ${state.busy ? '<div class="thinking" role="status">夜寻正在整理你的需求 <span>···</span></div>' : ""}</div>
-      <div class="quick-actions"><span>试着问问</span>${(result?.follow_up?.actions || ["武汉有哪些真实商家", "有哪些咖啡店", "查金贵源的菜单价格"]).map((message) => `<button type="button" data-message="${e(message)}" ${state.busy ? "disabled" : ""}>${e(message)} ↗</button>`).join("")}</div>
-      <form id="decision-form" class="chat-composer"><label class="sr-only" for="request-message">你的用餐需求</label><textarea id="request-message" name="message" maxlength="2000" required placeholder="比如：今晚七点，四个人在江汉路附近，总共三百元，想吃湖北菜…" ${state.busy ? "disabled" : ""}>${e(state.draft)}</textarea>
-        <div class="composer-actions"><div><button type="button" data-location ${state.busy ? "disabled" : ""}>⌖ 我的位置</button><button type="button" data-reset ${state.busy ? "disabled" : ""}>↻ 重新聊</button></div><button type="submit" class="button-primary" ${state.busy ? "disabled" : ""}>${state.busy ? "正在寻找…" : "帮我找找 ↗"}</button></div></form>
+      <div class="quick-actions"><span>一键试问</span>${suggestions.map(({ label, message }) => `<button type="button" data-message="${e(message)}" title="${e(message)}" ${state.busy ? "disabled" : ""}>${e(label)} ↗</button>`).join("")}</div>
+      <form id="decision-form" class="chat-composer"><div class="composer-heading"><label for="request-message">说说你的用餐需求</label><span>人数 · 预算 · 位置 · 时间 · 口味</span></div><textarea id="request-message" name="message" maxlength="2000" required placeholder="比如：今晚七点，四个人在江汉路附近，总共三百元，想吃湖北菜…" ${state.busy ? "disabled" : ""}>${e(state.draft)}</textarea>
+        <div class="composer-actions"><div><button type="button" data-location ${state.busy ? "disabled" : ""}>⌖ 我的位置</button><button type="button" data-reset ${state.busy ? "disabled" : ""}>↻ 重新聊</button></div><button type="submit" class="button-primary" ${state.busy ? "disabled" : ""}>${state.busy ? "正在寻找…" : "开始推荐 ↗"}</button></div></form>
+      <p class="chat-footnote">条件明确后，为你推荐最多 3 家候选商家。</p>
       ${state.failedRequest ? '<div class="request-error" role="alert">这次查询未完成，已保留输入与对话。<button type="button" data-retry-decision>重试查询</button></div>' : ""}
       ${result?.mode === "fallback" ? '<p class="source-note">AI 暂不可用，已切换本地条件解析。</p>' : ""}
     </section><aside class="decision-aside"><section class="conditions" aria-label="已理解的条件"><span class="eyebrow">YOUR DINING NOTES</span><h2>今晚的用餐笔记</h2><button type="button" class="edit-needs-button" data-edit-needs ${state.busy ? "disabled" : ""}>${state.editingNeeds ? "收起编辑" : "编辑条件 ✎"}</button>${state.editingNeeds ? preferencesEditor(state.preferences) : constraintsView(preferences, result?.budget_per_person)}</section>
-      <section class="journey-note" ${state.editingNeeds ? "hidden" : ""}><span class="eyebrow">一顿好饭，三步就好</span><ol><li><span>01</span><div><strong>聊聊你的想法</strong><small>人数、预算、位置与口味</small></div></li><li><span>02</span><div><strong>看看适合的店</strong><small>比较菜单、价格和真实位置</small></div></li><li><span>03</span><div><strong>选好，就出发</strong><small>打开地图，或联系门店</small></div></li></ol><button type="button" data-page="directory">去武汉地图逛逛 ↗</button></section></aside></div>
+      <details class="journey-note" ${state.editingNeeds ? "hidden" : ""}><summary>从聊天到出发，怎么用？</summary><ol><li><span>01</span><div><strong>聊聊你的想法</strong><small>人数、预算、位置与口味</small></div></li><li><span>02</span><div><strong>看看适合的店</strong><small>比较菜单、价格和真实位置</small></div></li><li><span>03</span><div><strong>选好，就出发</strong><small>打开地图，或联系门店</small></div></li></ol><button type="button" data-page="directory">去武汉地图逛逛 ↗</button></details></aside></div>
     ${catalogSummary()}
     ${selectedPlaceView()}
     ${candidateResultsView(result, state.saved, state.compared, state.failedRequest || state.busy)}`;

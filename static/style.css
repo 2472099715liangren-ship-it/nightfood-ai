@@ -216,6 +216,16 @@ figcaption {
   background: var(--surface);
   box-shadow: 0 2px 8px #4a633410;
 }
+.nav-link[data-page="decision"] {
+  font-weight: 600;
+}
+.nav-link[data-page="decision"].active {
+  background: var(--green-dark);
+  color: #fffef8;
+}
+.nav-ai-mark {
+  font-size: 11px;
+}
 #saved-count {
   display: inline-grid;
   place-items: center;
@@ -368,6 +378,9 @@ figcaption {
   }
 }
 @media (max-width: 650px) {
+  .nav-ai-mark {
+    display: none;
+  }
   .site-header {
     width: calc(100% - 32px);
     min-height: 0;
