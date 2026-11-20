@@ -8,17 +8,20 @@
 }
 .ai-intro-label {
   padding: 5px 11px;
-  border: 1px solid #cdddbf;
+  border: 1px solid var(--green-deep);
   border-radius: 20px;
-  background: #e8f1dc;
-  color: var(--green-dark);
+  background: var(--green-deep);
+  color: #e1f5a6;
   letter-spacing: 1px;
 }
 .hero-art {
-  width: 145px;
+  width: 150px;
   flex-shrink: 0;
   margin-right: 20px;
-  opacity: 0.75;
+  padding: 12px;
+  border: 1px solid #b4d877;
+  border-radius: 32px 16px 32px 16px;
+  background: #d7ee9f;
   text-align: center;
 }
 .hero-art svg {
@@ -27,8 +30,8 @@
 }
 .hero-art span {
   font-size: 10px;
-  color: #87967b;
-  letter-spacing: 4px;
+  color: #536d43;
+  letter-spacing: 2px;
 }
 .decision-workspace {
   display: grid;
@@ -37,11 +40,11 @@
   align-items: start;
 }
 .decision-input {
-  border: 1px solid #b9cfa9;
-  border-top: 3px solid #759865;
+  border: 1px solid #96c6aa;
+  border-top: 4px solid var(--green);
   border-radius: 24px;
   background: var(--surface);
-  box-shadow: 0 16px 48px #3f632b12;
+  box-shadow: 0 20px 55px #125a3922;
   padding: 26px;
   min-width: 0;
 }

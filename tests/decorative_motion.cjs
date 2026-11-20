@@ -31,6 +31,8 @@ const assert = require("node:assert/strict");
           document.querySelector(".botanical-left"),
           "::after",
         ).opacity,
+        spark: getComputedStyle(document.querySelector(".spark-one")).transform,
+        background: getComputedStyle(document.body, "::before").transform,
       }));
     const first = await sample();
     await page.waitForTimeout(700);
@@ -58,7 +60,6 @@ const assert = require("node:assert/strict");
         .evaluate((el) => getComputedStyle(el).pointerEvents),
       "none",
     );
-
     await control.click();
     await control.filter({ hasText: "开启装饰动效" }).waitFor();
     const paused = await sample();
@@ -86,6 +87,12 @@ const assert = require("node:assert/strict");
     assert.ok(await control.isDisabled());
     assert.equal(
       await page
+        .locator("body")
+        .evaluate((el) => getComputedStyle(el, "::before").animationName),
+      "none",
+    );
+    assert.equal(
+      await page
         .locator(".botanical-left")
         .evaluate((el) => getComputedStyle(el, "::before").animationName),
       "none",
@@ -94,9 +101,7 @@ const assert = require("node:assert/strict");
       await page
         .locator(".botanical-left")
         .evaluate((el) =>
-          getComputedStyle(el, "::before").backgroundImage.includes(
-            "botanical.svg",
-          ),
+          getComputedStyle(el, "::before").maskImage.includes("botanical.svg"),
         ),
       "Static botanical artwork remains available",
     );
@@ -134,7 +139,10 @@ const assert = require("node:assert/strict");
         await page.locator(".side-botanical").first().isVisible(),
         width > 1100,
       );
-      assert.equal(await control.isVisible(), width > 1100);
+      assert.ok(
+        await control.isVisible(),
+        "Background motion can be paused at every width",
+      );
     }
     await page.locator("#request-message").scrollIntoViewIfNeeded();
     assert.ok(

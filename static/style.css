@@ -1,18 +1,19 @@
 /* Shared visual tokens and page shell. Component layouts live in decision.css. */
 :root {
   color-scheme: light;
-  --page: #f2f6ee;
-  --paper: #fbfcf7;
-  --surface: #fffefa;
-  --surface-soft: #eef4e8;
-  --green: #52785b;
-  --green-dark: #345e43;
-  --green-deep: #294e39;
-  --green-pale: #e2ecd9;
-  --green-line: #dce5d5;
-  --ink: #344b3d;
-  --muted: #73816e;
-  --shadow: 0 12px 36px #3c59340a;
+  --page: #dcf3e6;
+  --paper: #f5fbf3;
+  --surface: #fffef8;
+  --surface-soft: #e8f6e8;
+  --green: #16845e;
+  --green-dark: #126247;
+  --green-deep: #0b4436;
+  --green-pale: #d1f1bc;
+  --green-line: #bcdcc8;
+  --accent: #d2ef78;
+  --ink: #21483b;
+  --muted: #536d60;
+  --shadow: 0 16px 44px #154f3620;
 }
 * {
   box-sizing: border-box;
@@ -21,10 +22,13 @@ html {
   scroll-behavior: smooth;
 }
 body {
+  --decoration-play-state: running;
+  isolation: isolate;
   margin: 0;
   min-height: 100vh;
   background:
-    radial-gradient(ellipse at 80% 0, #e7efdc80, transparent 48%), var(--page);
+    radial-gradient(ellipse at 88% 0, #e9f5ad, transparent 46%),
+    radial-gradient(ellipse at 0 70%, #a4dfc7, transparent 48%), var(--page);
   color: var(--ink);
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
@@ -75,7 +79,7 @@ a.button-secondary {
   text-decoration: none;
 }
 .button-primary {
-  background: var(--green-dark);
+  background: linear-gradient(135deg, #16845e, var(--green-deep));
   border-color: var(--green-dark);
   color: #fffef8;
 }
@@ -135,16 +139,41 @@ figcaption {
   white-space: nowrap;
 }
 
-/* Decorative motion stays at the edges; only transforms and opacity animate. */
+/* All ambient motion shares one pause state. Content and form controls stay still. */
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  width: min(68vw, 800px);
+  height: min(85vh, 800px);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: -2;
+  animation: ambient-flow 10s ease-in-out infinite alternate;
+  animation-play-state: var(--decoration-play-state);
+}
+body::before {
+  left: -20%;
+  top: 8%;
+  background: radial-gradient(ellipse, #43ce9a88, transparent 68%);
+}
+body::after {
+  right: -18%;
+  top: 22%;
+  background: radial-gradient(ellipse, #d2ef78cc, transparent 68%);
+  animation-delay: -6s;
+  animation-direction: alternate-reverse;
+}
+
+/* Botanical margins use only transforms and opacity, without animation libraries. */
 .side-botanical {
-  --decoration-play-state: running;
   --side-phase: 0s;
   position: fixed;
-  width: 140px;
-  height: 660px;
-  top: 150px;
+  width: clamp(120px, 12vw, 200px);
+  height: 760px;
+  top: 110px;
   overflow: hidden;
-  opacity: 0.42;
+  opacity: 0.95;
   pointer-events: none;
   z-index: -1;
 }
@@ -157,28 +186,32 @@ figcaption {
 .side-botanical::before {
   inset: 0;
   z-index: 1;
-  background: url("/botanical.svg") center / contain no-repeat;
+  background: linear-gradient(170deg, #078565, #2b9c60 55%, #82ad2c);
+  mask: url("/botanical.svg") center / contain no-repeat;
   transform-origin: 50% 95%;
-  animation: botanical-sway 12s ease-in-out infinite alternate;
+  animation: botanical-sway 4s ease-in-out infinite alternate;
   animation-delay: var(--side-phase);
 }
 .side-botanical::after {
-  inset: 22% 0 16%;
-  background: radial-gradient(ellipse, #c7dcb899, transparent 70%);
-  opacity: 0.45;
-  animation: botanical-breathe 9s ease-in-out infinite;
+  inset: 15% 14% 24%;
+  border: 2px solid #48aa7280;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, #ceef7b80, transparent 70%);
+  box-shadow: 0 0 30px #4cbf7820;
+  opacity: 0.7;
+  animation: botanical-breathe 5s ease-in-out infinite alternate;
   animation-delay: var(--side-phase);
 }
 .botanical-left {
   left: max(0px, calc((100vw - 1460px) / 2));
 }
 .botanical-right {
-  --side-phase: -5s;
+  --side-phase: -3s;
   right: max(0px, calc((100vw - 1460px) / 2));
   transform: scaleX(-1) translateY(90px);
 }
 .botanical-right::before {
-  animation-duration: 15s;
+  animation-duration: 5s;
 }
 .botanical-leaf,
 .botanical-spark {
@@ -186,12 +219,13 @@ figcaption {
   z-index: 2;
 }
 .botanical-leaf {
-  width: 13px;
-  height: 25px;
-  border: 1px solid #8faa7880;
+  width: 24px;
+  height: 46px;
+  border: 1px solid #16845e;
   border-radius: 100% 0 100% 0;
-  background: linear-gradient(140deg, #a4c18b99, #dbe7bf66);
-  opacity: 0.7;
+  background: linear-gradient(140deg, #2da46b, #d2ef78);
+  box-shadow: 0 7px 15px #12624720;
+  opacity: 0.9;
   transform: rotate(var(--leaf-angle));
   animation: botanical-drift var(--leaf-duration) ease-in-out infinite;
   animation-delay: calc(var(--leaf-delay) + var(--side-phase));
@@ -200,31 +234,33 @@ figcaption {
   left: 23%;
   top: 23%;
   --leaf-angle: -25deg;
-  --leaf-duration: 11s;
+  --leaf-duration: 6s;
   --leaf-delay: -2s;
 }
 .leaf-two {
   left: 66%;
   top: 49%;
   --leaf-angle: 28deg;
-  --leaf-duration: 14s;
-  --leaf-delay: -7s;
+  --leaf-duration: 7.5s;
+  --leaf-delay: -5s;
 }
 .leaf-three {
   left: 40%;
   top: 77%;
   --leaf-angle: -12deg;
-  --leaf-duration: 17s;
-  --leaf-delay: -10s;
+  --leaf-duration: 9s;
+  --leaf-delay: -7s;
 }
 .botanical-spark {
-  width: 4px;
-  height: 4px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: #b7a375;
-  box-shadow: 0 0 9px #b9cf9266;
-  opacity: 0.6;
-  animation: botanical-twinkle 6s ease-in-out infinite;
+  background: #f3c74b;
+  box-shadow:
+    0 0 0 5px #e5bf4c20,
+    0 0 18px #d3bd5f80;
+  opacity: 0.9;
+  animation: botanical-twinkle 3s ease-in-out infinite;
   animation-delay: var(--side-phase);
 }
 .spark-one {
@@ -241,52 +277,61 @@ figcaption {
 .side-botanical span {
   animation-play-state: var(--decoration-play-state);
 }
-.decorations-paused .side-botanical {
+.decorations-paused {
   --decoration-play-state: paused;
+}
+@keyframes ambient-flow {
+  from {
+    transform: translate3d(-50px, -40px, 0) scale(0.85);
+    opacity: 0.55;
+  }
+  to {
+    transform: translate3d(90px, 100px, 0) scale(1.2);
+    opacity: 1;
+  }
 }
 @keyframes botanical-sway {
   from {
-    transform: translate3d(0, 4px, 0) rotate(-2deg);
+    transform: translate3d(-12px, 16px, 0) rotate(-9deg);
   }
   to {
-    transform: translate3d(0, -5px, 0) rotate(2.5deg);
+    transform: translate3d(12px, -18px, 0) rotate(9deg);
   }
 }
 @keyframes botanical-drift {
   0% {
     opacity: 0;
-    transform: translate3d(-5px, -24px, 0) rotate(var(--leaf-angle));
+    transform: translate3d(-18px, -70px, 0) rotate(var(--leaf-angle));
   }
   25%,
   65% {
-    opacity: 0.8;
+    opacity: 1;
   }
   100% {
     opacity: 0;
-    transform: translate3d(10px, 35px, 0)
-      rotate(calc(var(--leaf-angle) + 35deg));
+    transform: translate3d(30px, 100px, 0)
+      rotate(calc(var(--leaf-angle) + 140deg));
   }
 }
 @keyframes botanical-twinkle {
   0%,
   100% {
-    opacity: 0.2;
+    opacity: 0.4;
     transform: translate3d(0, 0, 0) scale(0.8);
   }
   50% {
-    opacity: 0.9;
-    transform: translate3d(0, -9px, 0) scale(1.15);
+    opacity: 1;
+    transform: translate3d(-12px, -40px, 0) scale(1.4);
   }
 }
 @keyframes botanical-breathe {
-  0%,
-  100% {
-    opacity: 0.25;
-    transform: scale(0.9);
+  from {
+    opacity: 0.4;
+    transform: translate3d(-14px, 25px, 0) rotate(-14deg) scale(0.85);
   }
-  50% {
-    opacity: 0.65;
-    transform: scale(1.08);
+  to {
+    opacity: 0.9;
+    transform: translate3d(14px, -30px, 0) rotate(14deg) scale(1.1);
   }
 }
 .site-header {
@@ -312,7 +357,7 @@ figcaption {
   height: 44px;
   border-radius: 14px 14px 14px 4px;
   background: var(--green-dark);
-  color: #f7faed;
+  color: var(--accent);
   font-family: serif;
   font-size: 23px;
 }
@@ -335,29 +380,38 @@ figcaption {
   display: flex;
   gap: 5px;
   padding: 5px;
-  border: 1px solid #e0e8d9;
+  border: 1px solid #125940;
   border-radius: 30px;
-  background: #e8efdf80;
+  background: var(--green-deep);
+  box-shadow: 0 8px 22px #0b44361a;
 }
 .nav-link {
   border: 0;
   background: transparent;
-  color: var(--muted);
+  color: #d7e9dd;
   padding: 8px 22px;
   border-radius: 22px;
   white-space: nowrap;
 }
 .nav-link.active {
   color: var(--green-deep);
-  background: var(--surface);
+  background: var(--accent);
   box-shadow: 0 2px 8px #4a633410;
 }
 .nav-link[data-page="decision"] {
   font-weight: 600;
 }
 .nav-link[data-page="decision"].active {
-  background: var(--green-dark);
+  background: var(--accent);
+  color: var(--green-deep);
+}
+.nav-link:hover {
+  background: #27624e;
   color: #fffef8;
+}
+.nav-link.active:hover {
+  background: #e1f5a6;
+  color: var(--green-deep);
 }
 .nav-ai-mark {
   font-size: 11px;
@@ -400,13 +454,14 @@ figcaption {
   margin: 12px 0 14px;
   color: var(--green-deep);
   font-family: "Noto Serif CJK SC", "Songti SC", "SimSun", serif;
-  font-size: clamp(28px, 3.3vw, 40px);
-  font-weight: 600;
+  font-size: clamp(28px, 3.5vw, 44px);
+  font-weight: 700;
   letter-spacing: 1px;
   line-height: 1.5;
 }
 .page-intro h1 span {
-  color: #6b8c55;
+  color: #147957;
+  background: linear-gradient(transparent 72%, #c9ec79 72%);
 }
 .page-intro p {
   color: var(--muted);
@@ -505,16 +560,9 @@ figcaption {
 .toast.visible {
   opacity: 1;
 }
-@media (max-width: 1320px) {
-  .side-botanical {
-    width: 85px;
-    opacity: 0.26;
-  }
-}
 @media (max-width: 1100px) {
   .header-location,
-  .side-botanical,
-  .decoration-toggle {
+  .side-botanical {
     display: none;
   }
   .side-botanical {
@@ -537,6 +585,11 @@ figcaption {
   }
 }
 @media (max-width: 650px) {
+  body::before,
+  body::after {
+    width: 90vw;
+    height: 65vh;
+  }
   .nav-ai-mark {
     display: none;
   }

@@ -1,5 +1,7 @@
 # 两侧植物装饰动效 · 2026-11-20
 
+此文档记录前版柔和动效。最新醒目配色、放大动效和手机暂停行为见 [本版视觉说明](VIVID_MOTION_REVIEW.md)。
+
 分支：`feature/animated-botanical-margins`，基于 AI 对话首页版 `f96a431`。
 
 ## 效果与使用
