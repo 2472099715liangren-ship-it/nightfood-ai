@@ -135,23 +135,159 @@ figcaption {
   white-space: nowrap;
 }
 
-/* Quiet botanical margins frame the app without covering controls. */
+/* Decorative motion stays at the edges; only transforms and opacity animate. */
 .side-botanical {
+  --decoration-play-state: running;
+  --side-phase: 0s;
   position: fixed;
   width: 140px;
   height: 660px;
   top: 150px;
-  background: url("/botanical.svg") center / contain no-repeat;
-  opacity: 0.35;
+  overflow: hidden;
+  opacity: 0.42;
   pointer-events: none;
   z-index: -1;
+}
+.side-botanical::before,
+.side-botanical::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+.side-botanical::before {
+  inset: 0;
+  z-index: 1;
+  background: url("/botanical.svg") center / contain no-repeat;
+  transform-origin: 50% 95%;
+  animation: botanical-sway 12s ease-in-out infinite alternate;
+  animation-delay: var(--side-phase);
+}
+.side-botanical::after {
+  inset: 22% 0 16%;
+  background: radial-gradient(ellipse, #c7dcb899, transparent 70%);
+  opacity: 0.45;
+  animation: botanical-breathe 9s ease-in-out infinite;
+  animation-delay: var(--side-phase);
 }
 .botanical-left {
   left: max(0px, calc((100vw - 1460px) / 2));
 }
 .botanical-right {
+  --side-phase: -5s;
   right: max(0px, calc((100vw - 1460px) / 2));
   transform: scaleX(-1) translateY(90px);
+}
+.botanical-right::before {
+  animation-duration: 15s;
+}
+.botanical-leaf,
+.botanical-spark {
+  position: absolute;
+  z-index: 2;
+}
+.botanical-leaf {
+  width: 13px;
+  height: 25px;
+  border: 1px solid #8faa7880;
+  border-radius: 100% 0 100% 0;
+  background: linear-gradient(140deg, #a4c18b99, #dbe7bf66);
+  opacity: 0.7;
+  transform: rotate(var(--leaf-angle));
+  animation: botanical-drift var(--leaf-duration) ease-in-out infinite;
+  animation-delay: calc(var(--leaf-delay) + var(--side-phase));
+}
+.leaf-one {
+  left: 23%;
+  top: 23%;
+  --leaf-angle: -25deg;
+  --leaf-duration: 11s;
+  --leaf-delay: -2s;
+}
+.leaf-two {
+  left: 66%;
+  top: 49%;
+  --leaf-angle: 28deg;
+  --leaf-duration: 14s;
+  --leaf-delay: -7s;
+}
+.leaf-three {
+  left: 40%;
+  top: 77%;
+  --leaf-angle: -12deg;
+  --leaf-duration: 17s;
+  --leaf-delay: -10s;
+}
+.botanical-spark {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #b7a375;
+  box-shadow: 0 0 9px #b9cf9266;
+  opacity: 0.6;
+  animation: botanical-twinkle 6s ease-in-out infinite;
+  animation-delay: var(--side-phase);
+}
+.spark-one {
+  left: 72%;
+  top: 17%;
+}
+.spark-two {
+  left: 24%;
+  top: 61%;
+  animation-delay: calc(-3s + var(--side-phase));
+}
+.side-botanical::before,
+.side-botanical::after,
+.side-botanical span {
+  animation-play-state: var(--decoration-play-state);
+}
+.decorations-paused .side-botanical {
+  --decoration-play-state: paused;
+}
+@keyframes botanical-sway {
+  from {
+    transform: translate3d(0, 4px, 0) rotate(-2deg);
+  }
+  to {
+    transform: translate3d(0, -5px, 0) rotate(2.5deg);
+  }
+}
+@keyframes botanical-drift {
+  0% {
+    opacity: 0;
+    transform: translate3d(-5px, -24px, 0) rotate(var(--leaf-angle));
+  }
+  25%,
+  65% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(10px, 35px, 0)
+      rotate(calc(var(--leaf-angle) + 35deg));
+  }
+}
+@keyframes botanical-twinkle {
+  0%,
+  100% {
+    opacity: 0.2;
+    transform: translate3d(0, 0, 0) scale(0.8);
+  }
+  50% {
+    opacity: 0.9;
+    transform: translate3d(0, -9px, 0) scale(1.15);
+  }
+}
+@keyframes botanical-breathe {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 0.65;
+    transform: scale(1.08);
+  }
 }
 .site-header {
   width: min(1180px, calc(100% - 64px));
@@ -289,6 +425,25 @@ figcaption {
   font-size: 10px;
   color: var(--muted);
 }
+.footer-details {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.decoration-toggle {
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.decoration-toggle:hover {
+  background: transparent;
+  color: var(--green-dark);
+}
 .empty-state {
   grid-column: 1 / -1;
   padding: 40px 24px;
@@ -353,13 +508,17 @@ figcaption {
 @media (max-width: 1320px) {
   .side-botanical {
     width: 85px;
-    opacity: 0.22;
+    opacity: 0.26;
   }
 }
 @media (max-width: 1100px) {
   .header-location,
-  .side-botanical {
+  .side-botanical,
+  .decoration-toggle {
     display: none;
+  }
+  .side-botanical {
+    --decoration-play-state: paused;
   }
 }
 @media (max-width: 800px) {

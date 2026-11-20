@@ -452,6 +452,7 @@ class DecisionHttpTests(unittest.TestCase):
                     "/decision.css",
                     "/wuhan_map.js",
                     "/botanical.svg",
+                    "/decorations.js",
                     "/map/wuhan-basemap.geojson",
                 ):
                     with urlopen(base + asset) as response:

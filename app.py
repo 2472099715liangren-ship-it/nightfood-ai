@@ -59,6 +59,7 @@ STATIC_FILES = {
     "/wuhan_map.js": "wuhan_map.js",
     "/map/wuhan-basemap.geojson": "map/wuhan-basemap.geojson",
     "/botanical.svg": "botanical.svg",
+    "/decorations.js": "decorations.js",
     "/api-client.js": "api-client.js",
     "/session-store.js": "session-store.js",
     "/decision-view.js": "decision-view.js",
